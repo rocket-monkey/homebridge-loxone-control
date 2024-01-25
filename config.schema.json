@@ -1,0 +1,126 @@
+{
+  "pluginAlias": "LoxoneControl",
+  "pluginType": "platform",
+  "singular": true,
+  "customUi": true,
+  "schema": {
+    "type": "object",
+    "additionalProperties": true,
+    "properties": {
+      "platform": {
+        "type": "string",
+        "default": "LoxoneControl"
+      },
+      "loxoneMiniServerId": {
+        "title": "Loxone Miniserver ID",
+        "type": "string",
+        "required": true
+      },
+      "loxoneUser": {
+        "title": "Loxone Username",
+        "type": "string",
+        "required": true
+      },
+      "loxonePassword": {
+        "title": "Loxone Password",
+        "type": "string",
+        "required": true
+      },
+      "chromiumPath": {
+        "title": "Chromium Path",
+        "type": "string",
+        "required": false
+      },
+      "fanLevels": {
+        "title": "Levels the fan can be set to, coma separated in the format \"index:levelName\"",
+        "type": "string",
+        "default": "0:Aus;1:Stufe 1;2:Stufe 2;3:Stufe 3;4:Stufe 4;5:Hyper Speed;6:Nacht;7:Freecolling"
+      },
+      "blindsTimingWindow": {
+        "title": "Time in seconds from 0-100%, for blinds \"window\"",
+        "type": "string",
+        "default": "39"
+      },
+      "blindsTimingUpWindow": {
+        "title": "Time in seconds from 100-0%, for blinds \"window\"",
+        "type": "string",
+        "default": "40"
+      },
+      "blindsTimingWindowBig": {
+        "title": "Time in seconds from 0-100%, for blinds \"window-big\"",
+        "type": "string",
+        "default": "56"
+      },
+      "blindsTimingUpWindowBig": {
+        "title": "Time in seconds from 100-0%, for blinds \"window-big\"",
+        "type": "string",
+        "default": "58"
+      },
+      "blindsTimingAwning": {
+        "title": "Time in seconds from 0-100%, for blinds \"awning\"",
+        "type": "string",
+        "default": "20"
+      },
+      "blindsTimingUpAwning": {
+        "title": "Time in seconds from 100-0%, for blinds \"awning\"",
+        "type": "string",
+        "default": "23"
+      },
+      "devices": {
+        "type": "array",
+        "additionalItems": true,
+        "items": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "name": {
+              "title": "Disply name for homekit",
+              "type": "string",
+              "required": true
+            },
+            "identifier": {
+              "title": "Identifier for Loxone",
+              "type": "string",
+              "required": true
+            },
+            "lightOutlet": {
+              "title": "Should this device be handled as outlet?",
+              "type": "boolean",
+              "condition": {
+                "functionBody": "return model.devices[arrayIndices].identifier.includes(\"Beleuchtung\");"
+              }
+            },
+            "fanBathroom": {
+              "title": "Should this device be handled as bathroom fan?",
+              "type": "boolean",
+              "condition": {
+                "functionBody": "return model.devices[arrayIndices].identifier.includes(\"Lüftung\");"
+              }
+            },
+            "fanAddButtons": {
+              "title": "What additional levels should be available to set? List them coma separated",
+              "type": "string",
+              "condition": {
+                "functionBody": "return model.devices[arrayIndices].identifier.includes(\"Lüftung\");"
+              }
+            },
+            "blindsTiming": {
+              "title": "One of \"window\", \"window-big\", or \"awning\" or a value in seconds to reach 100%",
+              "type": "string",
+              "condition": {
+                "functionBody": "return model.devices[arrayIndices].identifier.includes(\"Jalousie\");"
+              }
+            },
+            "blindsMaxPosition": {
+              "title": "Define a maximum (e.g. 80%) that the blinds can be opened",
+              "type": "string",
+              "condition": {
+                "functionBody": "return model.devices[arrayIndices].identifier.includes(\"Jalousie\");"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

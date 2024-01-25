@@ -1,0 +1,134 @@
+{
+  "platform": "LoxoneControl",
+  "loxoneMiniServerId": "504F94A1634D",
+  "loxoneUser": "Mieter",
+  "loxonePassword": "2XYFxiKqn0",
+  "fanLevels": "0:Aus;1:Stufe 1;2:Stufe 2;3:Stufe 3;4:Stufe 4;5:Hyper Speed;6:Nacht;7:Freecolling",
+  "blindsTimingWindow": "39",
+  "blindsTimingUpWindow": "40",
+  "blindsTimingWindowBig": "56",
+  "blindsTimingUpWindowBig": "58",
+  "blindsTimingAwning": "20",
+  "blindsTimingUpAwning": "23",
+  "chromiumPath": "/usr/bin/chromium",
+  "devices": [
+    {
+      "name": "Kitchen Blinds",
+      "identifier": "Küche • Beschattung:type=Jalousie:1adc04cf-02cf-7198-ffff549825251d7a"
+    },
+    {
+      "name": "Livingroom Blinds",
+      "identifier": "Wohnzimmer • Beschattung:type=Jalousie:1b2f65ea-0188-97ac-ffff3270fa7dbe12"
+    },
+    {
+      "name": "Livingroom Loggia Blinds",
+      "identifier": "Wohnzimmer • Beschattung:type=Jalousie:1b2f65ea-0188-97df-ffff3270fa7dbe12",
+      "blindsTiming": "window-big"
+    },
+    {
+      "name": "Office Blinds",
+      "identifier": "Wohnzimmer • Beschattung:type=Jalousie:1b2f6641-00ec-70bf-ffff15437eaafc32"
+    },
+    {
+      "name": "Office Loggia Blinds",
+      "identifier": "Wohnzimmer • Beschattung:type=Jalousie:1b2f6641-00ec-70f2-ffff15437eaafc32",
+      "blindsTiming": "window-big",
+      "blindsMaxPosition": "60"
+    },
+    {
+      "name": "Bedroom Blinds",
+      "identifier": "Zimmer 1 • Beschattung:type=Jalousie:1adc04d0-0089-73e5-ffff549825251d7a"
+    },
+    {
+      "name": "Loggia Front Blinds",
+      "identifier": "Loggia • Beschattung:type=Jalousie:1adc0782-020b-0acb-ffff61be6a4d6391",
+      "blindsTiming": "awning"
+    },
+    {
+      "name": "Loggia Side Blinds",
+      "identifier": "Loggia • Beschattung:type=Jalousie:1b2f6761-02bc-e3a4-ffffbdfada627f7c",
+      "blindsTiming": "awning"
+    },
+    {
+      "name": "Kitchen Headlight",
+      "identifier": "Küche • Beleuchtung:type=Switch:1b2ab7ba-008e-2062-ffff6d9a993dda13"
+    },
+    {
+      "name": "Kitchen Spot",
+      "identifier": "Küche • Beleuchtung:type=Dimmer:1ae00af1-03c7-2aac-ffff4fded8e6fa73"
+    },
+    {
+      "name": "Bathroom Headlight",
+      "identifier": "WC-Dusche • Beleuchtung:type=Switch:1ae00c18-0336-d96e-ffffc98c706cedba"
+    },
+    {
+      "name": "Bathroom Spot",
+      "identifier": "WC-Dusche • Beleuchtung:type=Dimmer:1ae42391-03bb-5fe6-ffffeacbc086f455"
+    },
+    {
+      "name": "Entrance Spot",
+      "identifier": "Entrée • Beleuchtung:type=Switch:1ae135b4-0139-ac98-ffff549825251d7a"
+    },
+    {
+      "name": "Loggia Spot",
+      "identifier": "Loggia • Beleuchtung:type=Switch:1ae00bc5-03c3-59ba-ffffd2af598b940b"
+    },
+    {
+      "name": "Livingroom Ceiling",
+      "identifier": "Wohnzimmer • Beleuchtung:type=Switch:1ae00b60-010c-213b-ffff884ae32c0496",
+      "lightOutlet": true
+    },
+    {
+      "name": "Livingroom Plug",
+      "identifier": "Wohnzimmer • Beleuchtung:type=Switch:1ae00b45-0198-bbd1-ffffd36cd531c8b1",
+      "lightOutlet": true
+    },
+    {
+      "name": "Office Ceiling",
+      "identifier": "Wohnzimmer • Beleuchtung:type=Switch:1ae00b60-0065-07bf-ffff74946f9c885d",
+      "lightOutlet": true
+    },
+    {
+      "name": "Office Plug",
+      "identifier": "Wohnzimmer • Beleuchtung:type=Switch:1b2f67f3-01e2-210d-ffff62863f934c70",
+      "lightOutlet": true
+    },
+    {
+      "name": "Bedroom Ceiling",
+      "identifier": "Zimmer 1 • Beleuchtung:type=Switch:1ae00b0d-02b8-af1b-ffff549825251d7a",
+      "lightOutlet": true
+    },
+    {
+      "name": "Bedroom Plug",
+      "identifier": "Zimmer 1 • Beleuchtung:type=Switch:1ae00b0e-0328-bc30-ffff549825251d7a",
+      "lightOutlet": true
+    },
+    {
+      "name": "Livingroom Fan",
+      "identifier": "Wohnzimmer • Lüftung:type=Radio:1adc2790-03a4-5f71-ffff549825251d7a",
+      "fanAddButtons": "2,3,6,7"
+    },
+    {
+      "name": "Bedroom Fan",
+      "identifier": "Zimmer 1 • Lüftung:type=Radio:1adc427d-004a-34b5-ffff150b65528b11",
+      "fanAddButtons": "2,3,6,7"
+    },
+    {
+      "name": "Bathroom Fan",
+      "identifier": "WC-Dusche • Lüftung:type=Switch:1ae2b50f-02e5-f29e-ffffa466221631ac",
+      "fanBathroom": true
+    },
+    {
+      "name": "Livingroom Temperature",
+      "identifier": "Wohnzimmer • Klima:type=InfoOnlyAnalog:1acf23d8-03df-100d-ffff549825251d7a"
+    },
+    {
+      "name": "Bedroom Temperature",
+      "identifier": "Zimmer 1 • Klima:type=InfoOnlyAnalog:1acf23d6-031c-09e7-ffff549825251d7a"
+    }
+  ],
+  "_bridge": {
+    "username": "0E:8B:95:A8:AD:08",
+    "port": 49471
+  }
+}

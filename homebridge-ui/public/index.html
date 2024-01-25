@@ -1,0 +1,435 @@
+<!-- <p class="text-center">
+    <img src="https://raw.githubusercontent.com/rocket-monkey/homebridge-loxone-control/latest/assets/logo.png"
+        alt="homebridge-loxone-control logo" style="width: 150px;" />
+</p> -->
+<div id="pageIntro" class="text-center" style="display: none;">
+    <p class="lead">Thank you for installing <strong>homebridge-loxone-control</strong></p>
+    <p>
+        You can enter your Loxone Miniserver ID, username and password on the next page
+    </p>
+    <button type="button" class="btn btn-primary" id="introContinue">
+        Continue &rarr;
+    </button>
+</div>
+<div id="menuWrapper" class="btn-group w-100 mb-0" role="group" aria-label="UI Menu" style="display: none;">
+    <button type="button" class="btn btn-primary ml-0" id="menuSetup">
+        Setup
+    </button>
+    <button type="button" class="btn btn-primary" id="menuDevices">
+        Discover Devices
+    </button>
+    <button type="button" class="btn btn-primary mr-0" id="menuHome">
+        Advanced
+    </button>
+</div>
+
+<div id="pageDevices" class="mt-4" style="display: none;">
+    <ul id="discoveredDevices"></ul>
+
+    <form id="accessoryForm" style="display: none;">
+        <p id="addAccessoryTitle" class="lead"></p>
+        <p id="addAccessoryType" class="small"></p>
+        <p id="addAccessoryActionUuid" class="small"></p>
+        <input type="hidden" id="accessoryIdentifier">
+
+        <div class="form-group">
+            <label for="accessoryName">Disply name for homekit</label>
+            <input type="text" class="form-control" id="accessoryName" required>
+        </div>
+        <div class="form-group">
+            <select class="form-control" id="accessoryTypeSelect">
+                <option value="fan">Fan</option>
+                <option value="light">Light</option>
+                <option value="temperature">Temperature</option>
+                <option value="blinds">Blinds</option>
+            </select>
+        </div>
+        <div class="form-group accessory-light">
+            <checkbox-widget>
+                <label class="hb-uix-switch" for="lightOutlet">
+                    <input type="checkbox" id="lightOutlet" class="ng-untouched ng-pristine ng-valid">
+                    <span>Should this device be handled as outlet?</span>
+                    <span class="hb-uix-slider hb-uix-round"></span>
+                </label>
+            </checkbox-widget>
+        </div>
+        <div class="form-group accessory-fan">
+            <checkbox-widget>
+                <label class="hb-uix-switch" for="fanBathroom">
+                    <input type="checkbox" id="fanBathroom" class="ng-untouched ng-pristine ng-valid">
+                    <span>Should this device be handled as bathroom fan?</span>
+                    <span class="hb-uix-slider hb-uix-round"></span>
+                </label>
+            </checkbox-widget>
+        </div>
+        <div class="form-group accessory-fan">
+            <label for="fanAddButtons">What additional levels should be available to set? List them coma
+                separated</label>
+            <input type="text" class="form-control" id="fanAddButtons" required>
+        </div>
+        <div class="form-group accessory-blinds">
+            <select class="form-control" id="blindsTiming">
+                <option value="window">Window</option>
+                <option value="window-big">Big Window</option>
+                <option value="awning">Awning</option>
+            </select>
+        </div>
+        <div class="form-group accessory-blinds">
+            <label for="blindsMaxPosition">Define a maximum (e.g. 80%) that the blinds can be opened (optional)</label>
+            <input type="text" class="form-control" id="blindsMaxPosition">
+        </div>
+    </form>
+
+    <div class="text-center accessory-actions" style="display: none;">
+        <button id="addAccessoryButton" type="button" class="btn btn-primary">Add Accessory</button>
+        <button id="identifyAccessoryButton" type="button" class="btn btn-secondary">Identify</button>
+        <button id="cancelAccessoryButton" type="button" class="btn btn-outline">Cancel</button>
+    </div>
+</div>
+
+<div id="pageAdvanced" class="mt-4" style="display: none;">
+    <div class="card card-body">
+        <form id="advancedForm">
+            <div class="form-group">
+                <label for="fanLevels">Levels the fan can be set to, coma separated in the format
+                    "index:levelName"</label>
+                <input type="text" class="form-control" id="fanLevels" required>
+            </div>
+            <div class="form-group">
+                <label for="blindsTimingWindow">Time in seconds from 0-100%, for blinds "window"</label>
+                <input type="text" class="form-control" id="blindsTimingWindow" required>
+            </div>
+            <div class="form-group">
+                <label for="blindsTimingUpWindow">Time in seconds from 100-0%, for blinds "window"</label>
+                <input type="text" class="form-control" id="blindsTimingUpWindow" required>
+            </div>
+            <div class="form-group">
+                <label for="blindsTimingWindowBig">Time in seconds from 0-100%, for blinds "window-big"</label>
+                <input type="text" class="form-control" id="blindsTimingWindowBig" required>
+            </div>
+            <div class="form-group">
+                <label for="blindsTimingUpWindowBig">Time in seconds from 100-0%, for blinds "window-big"</label>
+                <input type="text" class="form-control" id="blindsTimingUpWindowBig" required>
+            </div>
+            <div class="form-group">
+                <label for="blindsTimingAwning">Time in seconds from 0-100%, for blinds "awning"</label>
+                <input type="text" class="form-control" id="blindsTimingAwning" required>
+            </div>
+            <div class="form-group">
+                <label for="blindsTimingUpAwning">Time in seconds from 100-0%, for blinds "awning"</label>
+                <input type="text" class="form-control" id="blindsTimingUpAwning" required>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div id="pageCredentials" style="display: none;">
+    <div class="card card-body">
+        <form id="credentialsForm">
+            <div class="form-group">
+                <label for="loxoneMiniServerId">Loxone Miniserver ID</label>
+                <input type="text" class="form-control" id="loxoneMiniServerId" required>
+            </div>
+            <div class="form-group">
+                <label for="loxoneUser">Loxone Username</label>
+                <input type="text" class="form-control" id="loxoneUser" required>
+            </div>
+            <div class="form-group">
+                <label for="loxonePassword">Loxone Password</label>
+                <input type="text" class="form-control" id="loxonePassword" required>
+            </div>
+            <div class="form-group">
+                <label for="chromiumPath">Chromium Path</label>
+                <input type="text" class="form-control" id="chromiumPath">
+            </div>
+        </form>
+    </div>
+</div>
+
+
+<script>
+    const urlPrefix = `${location.protocol}//${location.hostname}:18081`;
+    showIntro = () => {
+        const introContinue = document.getElementById('introContinue')
+        introContinue.addEventListener('click', () => {
+            homebridge.showSpinner()
+            document.getElementById('pageIntro').style.display = 'none'
+            document.getElementById('menuWrapper').style.display = 'inline-flex'
+            showCredentials()
+            homebridge.hideSpinner()
+        })
+        document.getElementById('pageIntro').style.display = 'block'
+    }
+    showCredentials = () => {
+        homebridge.showSpinner()
+        document.getElementById('menuHome').classList.remove('btn-elegant')
+        document.getElementById('menuHome').classList.add('btn-primary')
+        document.getElementById('menuDevices').classList.remove('btn-elegant')
+        document.getElementById('menuDevices').classList.add('btn-primary')
+        document.getElementById('menuSetup').classList.add('btn-elegant')
+        document.getElementById('menuSetup').classList.remove('btn-primary')
+        document.getElementById('pageAdvanced').style.display = 'none'
+        document.getElementById('pageDevices').style.display = 'none'
+        document.getElementById('pageCredentials').style.display = 'block'
+        homebridge.hideSpinner()
+    }
+    showDevices = async () => {
+        try {
+            homebridge.showSpinner()
+            document.getElementById('menuHome').classList.remove('btn-elegant')
+            document.getElementById('menuHome').classList.add('btn-primary')
+            document.getElementById('menuDevices').classList.add('btn-elegant')
+            document.getElementById('menuDevices').classList.remove('btn-primary')
+            document.getElementById('menuSetup').classList.remove('btn-elegant')
+            document.getElementById('menuSetup').classList.add('btn-primary')
+            document.getElementById('pageCredentials').style.display = 'none'
+            document.getElementById('pageAdvanced').style.display = 'none'
+            document.getElementById('pageDevices').style.display = 'block'
+
+            const response = await fetch(`${urlPrefix}/discoverDevices`);
+            const discoverDevices = await response.json();
+            await renderDevices(discoverDevices);
+        } catch (e) {
+            homebridge.toast.error(e.error, e.message);
+        } finally {
+            homebridge.hideSpinner();
+        }
+    }
+    showAdvanced = async () => {
+        homebridge.showSpinner()
+        document.getElementById('menuHome').classList.add('btn-elegant')
+        document.getElementById('menuHome').classList.remove('btn-primary')
+        document.getElementById('menuDevices').classList.remove('btn-elegant')
+        document.getElementById('menuDevices').classList.add('btn-primary')
+        document.getElementById('menuSetup').classList.remove('btn-elegant')
+        document.getElementById('menuSetup').classList.add('btn-primary')
+        document.getElementById('pageCredentials').style.display = 'none'
+        document.getElementById('pageAdvanced').style.display = 'block'
+        document.getElementById('pageDevices').style.display = 'none'
+        homebridge.hideSpinner();
+    }
+    getTypeValueFromCategory = (category) => {
+        switch (category) {
+            case "Lüftung":
+                return "fan";
+            case "Beleuchtung":
+                return "light";
+            case "Klima":
+                return "temperature";
+            case "Beschattung":
+                return "blinds";
+            default:
+                return "fan";
+        }
+    }
+    updateAccessoryFormState = () => {
+        const accessoryTypeSelect = document.getElementById("accessoryTypeSelect").value;
+        if (accessoryTypeSelect === "light") {
+            document.querySelectorAll(".accessory-light").forEach(element => {
+                element.style.display = "block";
+            });
+        } else if (accessoryTypeSelect !== "light") {
+            document.querySelectorAll(".accessory-light").forEach(element => {
+                element.style.display = "none";
+            });
+        }
+        if (accessoryTypeSelect === "fan") {
+            document.querySelectorAll(".accessory-fan").forEach(element => {
+                element.style.display = "block";
+            });
+        } else if (accessoryTypeSelect !== "fan") {
+            document.querySelectorAll(".accessory-fan").forEach(element => {
+                element.style.display = "none";
+            });
+        }
+        if (accessoryTypeSelect === "blinds") {
+            document.querySelectorAll(".accessory-blinds").forEach(element => {
+                element.style.display = "block";
+            });
+        } else if (accessoryTypeSelect !== "blinds") {
+            document.querySelectorAll(".accessory-blinds").forEach(element => {
+                element.style.display = "none";
+            });
+        }
+    }
+    identifyAccessory = async (identifier) => {
+        try {
+            homebridge.showSpinner()
+
+            await fetch(`${urlPrefix}/identifyAccessory?identifier=${identifier}`);
+        } catch (e) {
+            homebridge.toast.error(e.error, e.message);
+        } finally {
+            homebridge.hideSpinner();
+        }
+    }
+    addAccessory = (identifier) => {
+        document.getElementById('discoveredDevices').style.display = 'none'
+        document.getElementById('accessoryForm').style.display = 'block'
+        const [loxoneName, typeDef, actionUuid] = identifier.split(':');
+        const [_, type] = typeDef.split("=");
+        const parts = loxoneName.split(" ");
+        const category = parts[parts.length - 1];
+        document.getElementById('addAccessoryTitle').innerHTML = `Add "<strong>${loxoneName}</strong>"`;
+        document.getElementById('addAccessoryType').innerHTML = `Type: <strong>${type}</strong>`;
+        document.getElementById('addAccessoryActionUuid').innerHTML = `Action UUID: <strong>${actionUuid}</strong>`;
+        document.getElementById('accessoryTypeSelect').value = getTypeValueFromCategory(category);
+        document.getElementById('accessoryName').value = "";
+        document.getElementById('accessoryIdentifier').value = identifier;
+        document.querySelector('.accessory-actions').style.display = 'block';
+        updateAccessoryFormState();
+    }
+    cancelAccessory = () => {
+        document.getElementById('discoveredDevices').style.display = 'block'
+        document.getElementById('accessoryForm').style.display = 'none'
+        document.querySelector('.accessory-actions').style.display = 'none';
+    }
+    renderDevices = async (allDevices) => {
+        const pluginConfig = await homebridge.getPluginConfig();
+        const devices = pluginConfig[0].devices ?? [];
+        const cachedAccessories =
+            typeof homebridge.getCachedAccessories === 'function'
+                ? await homebridge.getCachedAccessories()
+                : await homebridge.request('/getCachedAccessories')
+        if (cachedAccessories.length > 0) {
+            cachedAccessories.sort((a, b) => {
+                return a.displayName.toLowerCase() > b.displayName.toLowerCase()
+                    ? 1
+                    : b.displayName.toLowerCase() > a.displayName.toLowerCase()
+                        ? -1
+                        : 0
+            })
+        }
+        const filtered = allDevices.filter(identifier => {
+            if (identifier.includes("unknown")) {
+                return false;
+            }
+            if (identifier.includes("type=Pushbutton")) {
+                return false;
+            }
+            if (identifier.includes("type=TextState")) {
+                return false;
+            }
+            const existingAccessory = cachedAccessories.find(accessory => accessory.context.device.identifier === identifier);
+            const existingDeviceConfig = devices.find(device => device.identifier === identifier);
+            return !existingDeviceConfig && !existingAccessory;
+        })
+        let innerHTML = filtered.map(identifier => {
+            const [loxoneName, typeDef, actionUuid] = identifier.split(':');
+            const canIdentify = !loxoneName.endsWith("Klima");
+            return `
+                    <li style="display: flex; align-items: center;">
+                        <strong>${loxoneName}</strong>
+                        ${canIdentify ? `<button type="button" class="btn btn-secondary btn-sm" onclick="identifyAccessory('${identifier}')">Identify</button>` : ''}
+                        <button type="button" class="btn btn-primary btn-sm" onclick="addAccessory('${identifier}')">Add</button>
+                    </li>`;
+        })
+        document.querySelector('#discoveredDevices').innerHTML = innerHTML.join('\n');
+    }
+
+    (async () => {
+        try {
+            // get the initial config - this is an array potentially containing multiple config blocks
+            const pluginConfig = await homebridge.getPluginConfig();
+
+            if (pluginConfig.length) {
+                const { loxoneMiniServerId, loxoneUser, loxonePassword, chromiumPath } = pluginConfig[0];
+                document.getElementById('menuWrapper').style.display = 'inline-flex';
+                document.querySelector('#loxoneMiniServerId').value = loxoneMiniServerId ?? "";
+                document.querySelector('#loxoneUser').value = loxoneUser ?? "";
+                document.querySelector('#loxonePassword').value = loxonePassword ?? "";
+                document.querySelector('#chromiumPath').value = chromiumPath ?? "";
+                showCredentials();
+            } else {
+                pluginConfig.push({ name: 'LoxoneControl' });
+                await homebridge.updatePluginConfig(pluginConfig);
+                showIntro();
+            }
+
+            const { fanLevels, blindsTimingWindow, blindsTimingUpWindow, blindsTimingWindowBig, blindsTimingUpWindowBig, blindsTimingAwning, blindsTimingUpAwning } = pluginConfig.length ? pluginConfig[0] : {};
+            document.querySelector('#fanLevels').value = fanLevels ?? "0:Aus;1:Stufe 1;2:Stufe 2;3:Stufe 3;4:Stufe 4;5:Hyper Speed;6:Nacht;7:Freecolling";
+            document.querySelector('#blindsTimingWindow').value = blindsTimingWindow ?? "39";
+            document.querySelector('#blindsTimingUpWindow').value = blindsTimingUpWindow ?? "40";
+            document.querySelector('#blindsTimingWindowBig').value = blindsTimingWindowBig ?? "56";
+            document.querySelector('#blindsTimingUpWindowBig').value = blindsTimingUpWindowBig ?? "58";
+            document.querySelector('#blindsTimingAwning').value = blindsTimingAwning ?? "20";
+            document.querySelector('#blindsTimingUpAwning').value = blindsTimingUpAwning ?? "23";
+
+            document.getElementById('advancedForm').addEventListener('input', () => {
+                pluginConfig[0].fanLevels = document.getElementById("fanLevels").value;
+                pluginConfig[0].blindsTimingWindow = document.getElementById("blindsTimingWindow").value;
+                pluginConfig[0].blindsTimingUpWindow = document.getElementById("blindsTimingUpWindow").value;
+                pluginConfig[0].blindsTimingWindowBig = document.getElementById("blindsTimingWindowBig").value;
+                pluginConfig[0].blindsTimingUpWindowBig = document.getElementById("blindsTimingUpWindowBig").value;
+                pluginConfig[0].blindsTimingAwning = document.getElementById("blindsTimingAwning").value;
+                pluginConfig[0].blindsTimingUpAwning = document.getElementById("blindsTimingUpAwning").value;
+
+                // update the config
+                homebridge.updatePluginConfig(pluginConfig);
+            });
+
+            document.getElementById('credentialsForm').addEventListener('input', () => {
+                // get the current values from the form
+                pluginConfig[0].loxoneMiniServerId = document.getElementById("loxoneMiniServerId").value;
+                pluginConfig[0].loxoneUser = document.getElementById("loxoneUser").value;
+                pluginConfig[0].loxonePassword = document.getElementById("loxonePassword").value;
+                pluginConfig[0].chromiumPath = document.getElementById("chromiumPath").value;
+
+                // update the config
+                homebridge.updatePluginConfig(pluginConfig);
+            });
+
+            let newAccessory = {};
+            document.getElementById('accessoryForm').addEventListener('input', () => {
+                updateAccessoryFormState();
+                const accessoryTypeSelect = document.getElementById("accessoryTypeSelect").value;
+                const lightOutlet = document.getElementById("lightOutlet").checked;
+                newAccessory = {
+                    name: document.getElementById("accessoryName").value,
+                    identifier: document.getElementById("accessoryIdentifier").value,
+                };
+                switch (accessoryTypeSelect) {
+                    case "fan":
+                        newAccessory.fanBathroom = document.getElementById("fanBathroom").checked;
+                        newAccessory.fanAddButtons = document.getElementById("fanAddButtons").value;
+                        break;
+                    case "blinds":
+                        newAccessory.blindsTiming = document.getElementById("blindsTiming").value;
+                        newAccessory.blindsMaxPosition = document.getElementById("blindsMaxPosition").value;
+                        break;
+                    case "light":
+                        newAccessory.lightOutlet = document.getElementById("lightOutlet").checked;
+                        break;
+                }
+            });
+            document.querySelector('#identifyAccessoryButton').addEventListener('click', () => {
+                const identifier = document.getElementById("accessoryIdentifier").value;
+                identifyAccessory(identifier);
+            });
+            document.querySelector('#addAccessoryButton').addEventListener('click', () => {
+                if (!newAccessory.name) {
+                    homebridge.toast.error('Please enter a name for the accessory', 'Error')
+                    return;
+                }
+                // add the new accessory to the config
+                pluginConfig[0].devices = pluginConfig[0].devices ?? [];
+                pluginConfig[0].devices.push(newAccessory);
+
+                // update the config
+                homebridge.updatePluginConfig(pluginConfig);
+                cancelAccessory();
+                showDevices();
+            });
+            document.querySelector('#cancelAccessoryButton').addEventListener('click', cancelAccessory);
+
+            menuHome.addEventListener('click', () => showAdvanced())
+            menuDevices.addEventListener('click', () => showDevices())
+            menuSetup.addEventListener('click', () => showCredentials())
+        } catch (err) {
+            console.error(err);
+            homebridge.toast.error(err.message, 'Error')
+        } finally {
+            homebridge.hideSpinner()
+        }
+    })();
+</script>
