@@ -1,7 +1,7 @@
 {
   "displayName": "Homebridge Loxone Control",
   "name": "homebridge-loxone-control",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Homebridge plugin to control a loxone system trough the web-interface - useful if you have zero access to the Miniserver",
   "license": "Apache-2.0",
   "repository": {
@@ -12,7 +12,7 @@
     "url": "https://github.com/rvetere/homebridge-loxone-control/issues"
   },
   "engines": {
-    "node": "^18.17.0 || ^20.9.0",
+    "node": "^18.17.0 || ^20.11.0",
     "homebridge": "^1.6.0"
   },
   "main": "dist/index.js",

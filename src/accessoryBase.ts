@@ -12,6 +12,16 @@ export class AccessoryBase {
     public readonly identifier: string
   ) {}
 
+  toggleState = async () => {
+    this.platform.log.error(
+      `toggleState not implemented! (${this.identifier})`
+    );
+  };
+
+  setStateOn = async () => {
+    this.platform.log.error(`setStateOn not implemented! (${this.identifier})`);
+  };
+
   setState = (newStates: States) => {
     this.states = newStates;
   };

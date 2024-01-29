@@ -58,6 +58,20 @@ export class PlatformOutletAccessory extends AccessoryBase {
     return this.states?.On || false;
   }
 
+  toggleState = async () => {
+    if (!this.states) {
+      return;
+    }
+    await this.setOn(!this.states.On);
+  };
+
+  setStateOn = async () => {
+    if (!this.states) {
+      return;
+    }
+    await this.setOn(true);
+  };
+
   setState = (newValues: States) => {
     const firstValue = newValues[Object.keys(newValues)[0]];
     const newStates: States = {};

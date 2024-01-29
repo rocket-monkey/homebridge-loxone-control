@@ -72,10 +72,6 @@ export class LoxoneControlPlatform implements DynamicPlatformPlugin {
     this.loxoneWebinterface.init();
     this.blindsController = new BlindsController(this);
 
-    global.getLoxoneWebinterface = () => {
-      return this.loxoneWebinterface;
-    };
-
     this.createDeviceInstance = this.createDeviceInstance.bind(this);
     this.getLoxoneWebinterface = this.getLoxoneWebinterface.bind(this);
     this.onReady = this.onReady.bind(this);
@@ -83,6 +79,8 @@ export class LoxoneControlPlatform implements DynamicPlatformPlugin {
     this.onStatusUpdateBefore = this.onStatusUpdateBefore.bind(this);
     this.handleRequest = this.handleRequest.bind(this);
     this.identifyAccessory = this.identifyAccessory.bind(this);
+    this.toggleAccessoryState = this.toggleAccessoryState.bind(this);
+    this.setAccessoryStateOn = this.setAccessoryStateOn.bind(this);
   }
 
   createHttpService() {
@@ -117,6 +115,11 @@ export class LoxoneControlPlatform implements DynamicPlatformPlugin {
     request: IncomingMessage,
     response: ServerResponse
   ) {
+    const [_url, query] =
+      request.url && request.url.includes("?") ? request.url.split("?") : [];
+    const identifierRaw = query ? query.replace("name=", "") : "";
+    const identifier = identifierRaw ? decodeURIComponent(identifierRaw) : null;
+
     if (request.url === "/discoverDevices") {
       this.log.debug("🔎 Discover devices request received...");
       if (!this.loxoneWebinterfaceReady) {
@@ -132,11 +135,12 @@ export class LoxoneControlPlatform implements DynamicPlatformPlugin {
         )
       );
       return;
-    } else if (request.url?.includes("/identifyAccessory")) {
-      const [_url, query] = request.url ? request.url.split("?") : [];
-      const identifierRaw = query ? query.replace("identifier=", "") : "";
-      const identifier = decodeURIComponent(identifierRaw);
+    } else if (request.url?.includes("/identifyAccessory") && identifier) {
       this.identifyAccessory(identifier);
+    } else if (request.url?.includes("/toggle") && identifier) {
+      this.toggleAccessoryState(identifier);
+    } else if (request.url?.includes("/setOn") && identifier) {
+      this.setAccessoryStateOn(identifier);
     }
 
     response.writeHead(204); // 204 No content
@@ -152,6 +156,18 @@ export class LoxoneControlPlatform implements DynamicPlatformPlugin {
 
     // add the restored accessory to the accessories cache so we can track if it has already been registered
     this.accessories.push(accessory);
+  }
+
+  async toggleAccessoryState(identifier: string) {
+    return this.instances
+      .find((instance) => instance.identifier === identifier)
+      ?.toggleState();
+  }
+
+  async setAccessoryStateOn(identifier: string) {
+    return this.instances
+      .find((instance) => instance.identifier === identifier)
+      ?.setStateOn();
   }
 
   async identifyAccessory(identifier: string) {
