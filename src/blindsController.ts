@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable indent */
 import { BlindsTilt, BlindsTimingVariant, BlindsType } from "./loxone/types";
 import { getBlindsTiming } from "./loxone/utils/getBlindsTiming";
@@ -20,15 +21,14 @@ interface MoveBlindsToFinalPositionParams {
 }
 
 export class BlindsController {
-  private activeTimers: {
-    [identifier: string]: NodeJS.Timeout | undefined;
-  } = {};
+  private activeTimers: Map<string, NodeJS.Timeout>;
 
   private runCommands: MoveBlindsToPositionParams[] = [];
   private runDebounceTimer: NodeJS.Timeout | null = null;
   public commandsExecuting = false;
 
   constructor(public readonly platform: LoxoneControlPlatform) {
+    this.activeTimers = new Map<string, NodeJS.Timeout>();
     this.moveBlindsToPosition = this.moveBlindsToPosition.bind(this);
     this.moveBlindsToPositionNow = this.moveBlindsToPositionNow.bind(this);
     this.moveBlindsToFinalPosition = this.moveBlindsToFinalPosition.bind(this);
@@ -53,9 +53,15 @@ export class BlindsController {
         const promises = this.runCommands.map(async (command, index) => {
           const additionalDelay = 600;
           const delay = index * additionalDelay;
-          const delays = await this.moveBlindsToPositionNow(command, delay);
-          command.platformAccessory.resetTiltPositions();
-          return delays;
+          const movingDelay = await this.moveBlindsToPositionNow(
+            command,
+            delay
+          );
+          this.resetTiltButtonsAfterDelay(
+            command.platformAccessory,
+            movingDelay
+          );
+          return movingDelay;
         });
         Promise.all(promises).then((delays) => {
           this.platform.log.debug(
@@ -72,6 +78,14 @@ export class BlindsController {
     });
   };
 
+  resetTiltButtonsAfterDelay = async (
+    accessory: PlatformWindowCoveringAccessory,
+    delay: number
+  ) => {
+    await sleep(delay + 1000);
+    accessory.resetTiltPositions();
+  };
+
   moveBlindsToPositionNow = async (
     { value, platformAccessory }: MoveBlindsToPositionParams,
     waitBeforeExecute = 0
@@ -85,14 +99,19 @@ export class BlindsController {
         : "closed";
       const tilt = (value > 0 ? actualTilt : "closed") as BlindsTilt;
       const { accessory, identifier, states } = platformAccessory;
+      const [_searchDescription, _typeQuery, actionUuid] =
+        identifier.split(":");
 
-      const isAlreadyRunning = states.PositionState !== 2;
-      if (isAlreadyRunning) {
+      if (this.activeTimers.has(actionUuid)) {
+        this.platform.log.debug(` > 🕰️ Clear active timer for "${actionUuid}"`);
+        clearTimeout(this.activeTimers.get(actionUuid));
+        this.activeTimers.delete(actionUuid);
+      } else {
         this.platform.log.debug(
-          `   🔥 Blinds "${accessory.context.device.name}" are already running, stop them!`
+          ` > 🕰️ No active timer for "${actionUuid}", ${JSON.stringify(
+            this.activeTimers.get(actionUuid)
+          )}`
         );
-        await sendCommand(this.platform, identifier, ["FullDown"]);
-        await sleep(500);
       }
 
       let delay = 0;
@@ -123,19 +142,37 @@ export class BlindsController {
 
       const steps = value - states.Position;
       const isMovingDown = steps > 0;
+
+      const isPositionStateChanged = isMovingDown
+        ? states.PositionState !==
+          this.platform.Characteristic.PositionState.INCREASING
+        : states.PositionState !==
+          this.platform.Characteristic.PositionState.DECREASING;
+
+      const isAlreadyRunning =
+        states.PositionState !==
+        this.platform.Characteristic.PositionState.STOPPED;
+      if (isAlreadyRunning && isPositionStateChanged) {
+        this.platform.log.debug(
+          `   🔥 Blinds "${
+            accessory.context.device.name
+          }" are already running and will have a new direction, stop them! ${JSON.stringify(
+            { isMovingDown, PositionState: states.PositionState }
+          )}`
+        );
+        await sendCommand(this.platform, identifier, ["FullDown"]);
+        await sleep(500);
+      } else if (isAlreadyRunning && !isPositionStateChanged) {
+        this.platform.log.debug(
+          `   👌 Blinds "${accessory.context.device.name}" are already running in the correct direction, do not stop them!`
+        );
+      }
+
       const stepsToTarget = toPositive(steps);
       const targetIsFullyDownOrUp =
         value === 0 || (value === 100 && tilt === "closed");
 
       if (stepsToTarget > 0) {
-        if (this.activeTimers[identifier]) {
-          this.platform.log.debug(
-            `   🚨 Clear active timer for "${identifier}"`
-          );
-          clearTimeout(this.activeTimers[identifier]);
-          this.activeTimers[identifier] = undefined;
-        }
-
         if (!targetIsFullyDownOrUp) {
           // calculate exact delay to reach "stepsToTarget"
           delay = Math.floor(
@@ -148,28 +185,38 @@ export class BlindsController {
         );
 
         states.TargetPosition = value;
-        const jsError = await this.sendMoveJalousieCommand(
-          platformAccessory,
-          true,
-          isMovingDown ? "FullDown" : "FullUp"
-        );
+        if (!isAlreadyRunning) {
+          const jsError = await this.sendMoveJalousieCommand(
+            platformAccessory,
+            true,
+            isMovingDown ? "FullDown" : "FullUp"
+          );
 
-        if (jsError) {
-          this.platform.log.error(`Error in sendCommand: ${jsError as string}`);
+          if (jsError) {
+            this.platform.log.error(
+              `Error in sendCommand: ${jsError as string}`
+            );
+          }
         }
 
         if (delay > 0) {
-          this.activeTimers[identifier] = setTimeout(
+          const newTimer = setTimeout(
             (() => {
-              this.activeTimers[identifier] = undefined;
               this.moveBlindsToFinalPosition({
                 platformAccessory,
                 isMovingDown,
                 tilt,
                 blindsType,
               });
+              this.activeTimers.delete(actionUuid);
             }).bind(this),
             delay
+          );
+          this.activeTimers.set(actionUuid, newTimer);
+          this.platform.log.debug(
+            ` > 🕰️ Set timer for "${actionUuid}" to ${delay}ms, ${JSON.stringify(
+              this.activeTimers.has(actionUuid)
+            )}`
           );
         }
       } else {
@@ -194,6 +241,7 @@ export class BlindsController {
       return delay;
     } catch (e) {
       this.platform.log.error(`Error in moveBlindsToPositionNow: ${e}`);
+      return 0;
     }
   };
 

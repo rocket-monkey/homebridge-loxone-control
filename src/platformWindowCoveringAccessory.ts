@@ -296,16 +296,22 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
         newStates.TargetPosition
       );
     }
-    // if (anyStateChanged) {
-    //   const { name } = this.accessory.context.device;
-    //   this.platform.log.debug(
-    //     `ℹ️ State change for "${name}": ${JSON.stringify({
-    //       PositionState: newStates.PositionState === 2 ? "stopped" : "moving",
-    //       Position: newStates.Position,
-    //       TiltPosition: newStates.TiltPosition,
-    //     })}`
-    //   );
-    // }
+    if (anyStateChanged) {
+      const { name } = this.accessory.context.device;
+      this.platform.log.debug(
+        `ℹ️ State change for "${name}": ${JSON.stringify({
+          PositionState:
+            newStates.PositionState === 2
+              ? "stopped"
+              : newStates.PositionState === 0
+              ? "decreasing"
+              : "increasing",
+          Position: newStates.Position,
+          TiltPosition: newStates.TiltPosition,
+          TargetPosition: newStates.TargetPosition,
+        })}`
+      );
+    }
     this.states = newStates;
   };
 }
