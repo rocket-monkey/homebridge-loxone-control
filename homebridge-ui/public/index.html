@@ -186,6 +186,23 @@
             document.getElementById('pageAdvanced').style.display = 'none'
             document.getElementById('pageDevices').style.display = 'block'
 
+            const pluginConfig = await homebridge.getPluginConfig();
+            const config = pluginConfig.length ? pluginConfig[0] : {};
+            if (
+                !config.loxoneMiniServerId ||
+                !config.loxoneUser ||
+                !config.loxonePassword
+            ) {
+                const innerHTML = `
+                    <li style="display: flex; align-items: center;">
+                        <div style="width: 100%; background: rgba(255, 0, 0, 0.35); color: white; text-align: center; padding: 9px;">
+                            <strong>Setup must be completed to unlock device discovery</strong>
+                        </div>
+                    </li>`;
+                document.querySelector('#discoveredDevices').innerHTML = innerHTML;
+                return;
+            }
+
             const response = await fetch(`${urlPrefix}/discoverDevices`);
             const discoverDevices = await response.json();
             await renderDevices(discoverDevices);
