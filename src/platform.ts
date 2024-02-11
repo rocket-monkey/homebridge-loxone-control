@@ -84,6 +84,14 @@ export class LoxoneControlPlatform implements DynamicPlatformPlugin {
   }
 
   createHttpService() {
+    if (
+      !this.config.loxoneMiniServerId ||
+      !this.config.loxoneUser ||
+      !this.config.loxonePassword
+    ) {
+      return;
+    }
+
     this.requestServer = http.createServer((req, res) => {
       // Set CORS headers
       res.setHeader("Access-Control-Allow-Origin", "*"); // This allows all origins
