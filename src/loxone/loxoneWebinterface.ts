@@ -45,26 +45,32 @@ export class LoxoneWebinterface {
     this.platform.log.debug(`🔗 Open URL "${serverUrl}" and login...`);
 
     if (!this.browser) {
-      const isRoot = username.sync() === "root";
-      if (this.platform.config.chromiumPath) {
-        this.platform.log.debug(
-          "Starting new instance of Chromium: " +
-            this.platform.config.chromiumPath
-        );
-        this.browser = await puppeteer.launch({
-          executablePath: this.platform.config.chromiumPath,
-          headless: "new",
-          ignoreHTTPSErrors: false,
-          args: isRoot ? ["--no-sandbox"] : [],
-        });
-        this.platform.log.debug("Chromium started");
-      } else {
-        this.browser = await puppeteer.launch({
-          headless: "new",
-          ignoreHTTPSErrors: false,
-          args: isRoot ? ["--no-sandbox"] : [],
-        });
-        this.platform.log.debug("Chrome of local package installation started");
+      try {
+        const isRoot = username.sync() === "root";
+        if (this.platform.config.chromiumPath) {
+          this.platform.log.debug(
+            "Starting new instance of Chromium: " +
+              this.platform.config.chromiumPath
+          );
+          this.browser = await puppeteer.launch({
+            executablePath: this.platform.config.chromiumPath,
+            headless: "new",
+            ignoreHTTPSErrors: false,
+            args: isRoot ? ["--no-sandbox"] : [],
+          });
+          this.platform.log.debug("Chromium started");
+        } else {
+          this.browser = await puppeteer.launch({
+            headless: "new",
+            ignoreHTTPSErrors: false,
+            args: isRoot ? ["--no-sandbox"] : [],
+          });
+          this.platform.log.debug(
+            "Chrome of local package installation started"
+          );
+        }
+      } catch (e) {
+        this.platform.log.error("Could not start headless browser!");
       }
     }
     this.page = await this.browser?.newPage();
@@ -116,6 +122,9 @@ export class LoxoneWebinterface {
     });
 
     try {
+      if (!this.page) {
+        return;
+      }
       // login to loxone miniserver
       await this.page.goto(serverUrl);
       await this.page.type("input[type=text]", user);
@@ -168,9 +177,7 @@ export class LoxoneWebinterface {
       );
       this.platform.onReady();
     } catch (e) {
-      this.platform.log.error(
-        "🚨 Error during login! We probably hit the rate limit.."
-      );
+      this.platform.log.error("Error during login!");
     }
   }
 

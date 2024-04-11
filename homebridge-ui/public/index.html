@@ -342,6 +342,15 @@
                     </li>`;
         })
         document.querySelector('#discoveredDevices').innerHTML = innerHTML.join('\n');
+        if (filtered.length === 0) {
+            innerHTML = `
+                    <li style="display: flex; align-items: center;">
+                        <div style="width: 100%; background: rgba(255, 0, 0, 0.35); color: white; text-align: center; padding: 9px;">
+                            <strong>No devices found</strong>
+                        </div>
+                    </li>`;
+            document.querySelector('#discoveredDevices').innerHTML = innerHTML;
+        }
     }
 
     (async () => {

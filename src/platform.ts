@@ -61,9 +61,6 @@ export class LoxoneControlPlatform implements DynamicPlatformPlugin {
     // in order to ensure they weren't added to homebridge already. This event can also be used
     // to start discovery of new accessories.
     this.api.on(APIEvent.DID_FINISH_LAUNCHING, () => {
-      // make it possible to discover loxone devices on the fly and identify them trough a custom http service
-      this.createHttpService();
-
       // run the method to discover / register your devices as accessories (from config)
       this.discoverDevices();
     });
@@ -92,31 +89,35 @@ export class LoxoneControlPlatform implements DynamicPlatformPlugin {
       return;
     }
 
-    this.requestServer = http.createServer((req, res) => {
-      // Set CORS headers
-      res.setHeader("Access-Control-Allow-Origin", "*"); // This allows all origins
-      res.setHeader(
-        "Access-Control-Allow-Methods",
-        "GET, POST, OPTIONS, PUT, PATCH, DELETE"
-      );
-      res.setHeader(
-        "Access-Control-Allow-Headers",
-        "X-Requested-With,content-type"
-      );
-      res.setHeader("Access-Control-Allow-Credentials", "true");
+    try {
+      this.requestServer = http.createServer((req, res) => {
+        // Set CORS headers
+        res.setHeader("Access-Control-Allow-Origin", "*"); // This allows all origins
+        res.setHeader(
+          "Access-Control-Allow-Methods",
+          "GET, POST, OPTIONS, PUT, PATCH, DELETE"
+        );
+        res.setHeader(
+          "Access-Control-Allow-Headers",
+          "X-Requested-With,content-type"
+        );
+        res.setHeader("Access-Control-Allow-Credentials", "true");
 
-      // Handle preflight OPTIONS request
-      if (req.method === "OPTIONS") {
-        res.writeHead(200);
-        res.end();
-        return;
-      }
+        // Handle preflight OPTIONS request
+        if (req.method === "OPTIONS") {
+          res.writeHead(200);
+          res.end();
+          return;
+        }
 
-      this.handleRequest(req, res);
-    });
-    this.requestServer.listen(18081, () =>
-      this.log.info("Http server listening on 18081...")
-    );
+        this.handleRequest(req, res);
+      });
+      this.requestServer.listen(18081, () =>
+        this.log.info("Http server listening on 18081...")
+      );
+    } catch (e) {
+      this.log.error("Could not start http server!");
+    }
   }
 
   private async handleRequest(
@@ -131,8 +132,10 @@ export class LoxoneControlPlatform implements DynamicPlatformPlugin {
     if (request.url === "/discoverDevices") {
       this.log.debug("🔎 Discover devices request received...");
       if (!this.loxoneWebinterfaceReady) {
-        while (!this.loxoneWebinterfaceReady) {
+        let tries = 0;
+        while (!this.loxoneWebinterfaceReady && tries < 4) {
           await sleep(500);
+          tries++;
         }
       }
 
@@ -328,6 +331,9 @@ export class LoxoneControlPlatform implements DynamicPlatformPlugin {
     );
 
     this.loxoneWebinterfaceReady = true;
+    // make it possible to discover loxone devices on the fly and identify them trough a custom http service
+    this.createHttpService();
+
     this.instances.forEach((instance) => {
       if (this.allStates[instance.identifier]) {
         instance.setState(this.allStates[instance.identifier]);
