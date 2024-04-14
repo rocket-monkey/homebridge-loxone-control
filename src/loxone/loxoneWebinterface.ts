@@ -54,14 +54,12 @@ export class LoxoneWebinterface {
           );
           this.browser = await puppeteer.launch({
             executablePath: this.platform.config.chromiumPath,
-            headless: "new",
             ignoreHTTPSErrors: false,
             args: isRoot ? ["--no-sandbox"] : [],
           });
           this.platform.log.debug("Chromium started");
         } else {
           this.browser = await puppeteer.launch({
-            headless: "new",
             ignoreHTTPSErrors: false,
             args: isRoot ? ["--no-sandbox"] : [],
           });
