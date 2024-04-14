@@ -1,15 +1,15 @@
 {
   "displayName": "Homebridge Loxone Control",
   "name": "homebridge-loxone-control",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "description": "Homebridge plugin to control a loxone system trough the web-interface - useful if you have zero access to the Miniserver",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/rvetere/homebridge-loxone-control.git"
+    "url": "https://github.com/rocket-monkey/homebridge-loxone-control.git"
   },
   "bugs": {
-    "url": "https://github.com/rvetere/homebridge-loxone-control/issues"
+    "url": "https://github.com/rocket-monkey/homebridge-loxone-control/issues"
   },
   "engines": {
     "node": "^18.17.0 || ^20.11.0",
@@ -24,7 +24,8 @@
     "prepublishOnly": "npm run lint && npm run build"
   },
   "keywords": [
-    "homebridge-plugin"
+    "homebridge-plugin",
+    "loxone"
   ],
   "dependencies": {
     "@homebridge/plugin-ui-utils": "1.0.0",
