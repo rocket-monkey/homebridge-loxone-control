@@ -3,6 +3,7 @@ import puppeteer, { Browser, Page } from "puppeteer";
 import { LoxoneControlPlatform } from "../platform";
 import username from "username";
 import { readFile } from "fs/promises";
+import { existsSync } from "fs";
 import { resolve } from "path";
 import { sleep } from "./utils/sleep";
 
@@ -48,6 +49,14 @@ export class LoxoneWebinterface {
       try {
         const isRoot = username.sync() === "root";
         if (this.platform.config.chromiumPath) {
+          // check if chromium path exists
+          if (!existsSync(this.platform.config.chromiumPath)) {
+            this.platform.log.error(
+              `Chromium path does not exist: ${this.platform.config.chromiumPath}`
+            );
+            return;
+          }
+
           this.platform.log.debug(
             "Starting new instance of Chromium: " +
               this.platform.config.chromiumPath
@@ -68,7 +77,9 @@ export class LoxoneWebinterface {
           );
         }
       } catch (e) {
-        this.platform.log.error("Could not start headless browser!");
+        this.platform.log.error(
+          "Could not start headless browser! See https://github.com/rocket-monkey/homebridge-loxone-control?tab=readme-ov-file#setup"
+        );
       }
     }
     this.page = await this.browser?.newPage();

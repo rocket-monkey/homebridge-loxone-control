@@ -1,3 +1,5 @@
+[![verified-by-homebridge](https://badgen.net/badge/homebridge/verified/purple)](https://github.com/homebridge/homebridge/wiki/Verified-Plugins)
+
 <p align="center" style="display: flex;">
     <img src="assets/logo.png" height="200">
 </p>
