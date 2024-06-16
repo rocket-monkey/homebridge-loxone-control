@@ -109,10 +109,10 @@ export class LoxoneWebinterface {
     // Listen for each network request
     await this.page?.setRequestInterception(true);
     this.page?.on("request", async (request) => {
-      if (request.url().includes("comps.js?v=14.0.2")) {
+      if (request.url().includes("comps.js?v=15.0.1")) {
         // Read the modified script content
         const patched = await readFile(
-          resolve(__dirname, "scripts/comps.js-v14.0.2.js"),
+          resolve(__dirname, "scripts/comps.js-v15.0.1.js"),
           "utf-8"
         );
         // search for "this._initStatesSrc()," and change to
@@ -185,8 +185,9 @@ export class LoxoneWebinterface {
         this.collectedComponents.map((c) => c.identifier)
       );
       this.platform.onReady();
-    } catch (e) {
+    } catch (e: any) {
       this.platform.log.error("Error during login!");
+      this.platform.log.error(e.message);
     }
   }
 
