@@ -3,12 +3,10 @@ import tseslint from "typescript-eslint";
 
 export default tseslint.config(
   {
-    ignores: ["dist/**"],
-  },
-  {
+    ignores: ["./dist/**", "./node_modules/**"],
     rules: {
-      quotes: ["error", "single"],
-      indent: ["error", 2, { SwitchCase: 0 }],
+      quotes: ["error", "double"],
+      indent: ["error", 2, { SwitchCase: 1 }],
       "linebreak-style": ["error", "unix"],
       semi: ["error", "always"],
       "comma-dangle": ["error", "always-multiline"],
