@@ -22,8 +22,8 @@
 ### Prerequisites
 
 - To use this plugin, you will need to already have:
-  - [Node](https://nodejs.org): latest version of `v18` or `v20` - any other major version is not supported.
-  - [Homebridge](https://homebridge.io): `v1.6` - refer to link for more information and installation instructions.
+  - [Node](https://nodejs.org): latest version of `v20` or `v22` - any other major version is not supported.
+  - [Homebridge](https://homebridge.io): `v1.9` - refer to link for more information and installation instructions.
   - Credentials for Loxone MiniServer: You will need your Loxone MiniServer ID and login credentials for the Loxone App. Typically, your landlord will provide a login link or similar access method for the Loxone App. Within the app, navigate to the info panel to locate the "serial number," which serves as your MiniServer ID.
 
 ### Tenants at Jägerstrasse 59, Winterthur
