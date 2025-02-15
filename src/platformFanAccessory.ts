@@ -1,10 +1,10 @@
 /* eslint-disable indent */
 import { CharacteristicValue, PlatformAccessory, Service } from "homebridge";
-import { AccessoryBase } from "./accessoryBase";
-import { sendCommand } from "./loxone/utils/sendCommand";
-import { LoxoneControlPlatform } from "./platform";
-import { splitTail } from "./loxone/utils/split";
-import { States } from "./loxone/types";
+import { AccessoryBase } from "./accessoryBase.js";
+import { sendCommand } from "./loxone/utils/sendCommand.js";
+import { LoxoneControlPlatform } from "./platform.js";
+import { splitTail } from "./loxone/utils/split.js";
+import { States } from "./loxone/types.js";
 
 export class PlatformFanAccessory extends AccessoryBase {
   private fanLevels: Array<{ index: number; loxoneLevelName: string }> = [];
@@ -156,7 +156,7 @@ export class PlatformFanAccessory extends AccessoryBase {
       fanLevels ||
       "0:Aus;1:Stufe 1;2:Stufe 2;3:Stufe 3;4:Stufe 4;5:Hyper Speed;6:Nacht;7:Freecolling"
     ).split(";");
-    const newFanLevels = levels.map((level) => {
+    const newFanLevels = levels.map((level: string) => {
       const [index, loxoneLevelName] = level.split(":");
       return {
         index: parseInt(index, 10),

@@ -1,30 +1,27 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
-/* eslint-disable @typescript-eslint/no-explicit-any */
-/* eslint-disable indent */
-import http, { IncomingMessage, Server, ServerResponse } from "http";
-import {
+import type {
   API,
-  APIEvent,
   Characteristic,
   DynamicPlatformPlugin,
-  Logger,
+  Logging,
   PlatformAccessory,
   PlatformConfig,
   Service,
   UnknownContext,
 } from "homebridge";
-import { AccessoryBase } from "./accessoryBase";
-import { BlindsController } from "./blindsController";
-import { LoxoneWebinterface } from "./loxone/loxoneWebinterface";
-import { splitTail } from "./loxone/utils/split";
-import { PlatformFanAccessory } from "./platformFanAccessory";
-import { PlatformLightAccessory } from "./platformLightAccessory";
-import { PlatformOutletAccessory } from "./platformOutletAccessory";
-import { PlatformTemperatureAccessory } from "./platformTemperatureAccessory";
-import { PlatformWindowCoveringAccessory } from "./platformWindowCoveringAccessory";
-import { PLATFORM_NAME, PLUGIN_NAME } from "./settings";
-import { sleep } from "./loxone/utils/sleep";
-import { sendCommand } from "./loxone/utils/sendCommand";
+import { EveHomeKitTypes } from "homebridge-lib/EveHomeKitTypes";
+import http, { IncomingMessage, Server, ServerResponse } from "http";
+import { AccessoryBase } from "./accessoryBase.js";
+import { BlindsController } from "./blindsController.js";
+import { LoxoneWebinterface } from "./loxone/loxoneWebinterface.js";
+import { PLATFORM_NAME, PLUGIN_NAME } from "./settings.js";
+import { sleep } from "./loxone/utils/sleep.js";
+import { sendCommand } from "./loxone/utils/sendCommand.js";
+import { splitTail } from "./loxone/utils/split.js";
+import { PlatformFanAccessory } from "./platformFanAccessory.js";
+import { PlatformLightAccessory } from "./platformLightAccessory.js";
+import { PlatformOutletAccessory } from "./platformOutletAccessory.js";
+import { PlatformTemperatureAccessory } from "./platformTemperatureAccessory.js";
+import { PlatformWindowCoveringAccessory } from "./platformWindowCoveringAccessory.js";
 
 /**
  * HomebridgePlatform
@@ -32,12 +29,20 @@ import { sendCommand } from "./loxone/utils/sendCommand";
  * parse the user config and discover/register accessories with Homebridge.
  */
 export class LoxoneControlPlatform implements DynamicPlatformPlugin {
-  public readonly Service: typeof Service = this.api.hap.Service;
-  public readonly Characteristic: typeof Characteristic =
-    this.api.hap.Characteristic;
+  public readonly Service: typeof Service;
+  public readonly Characteristic: typeof Characteristic;
 
   // this is used to track restored cached accessories
-  public readonly accessories: PlatformAccessory[] = [];
+  public readonly accessories: Map<string, PlatformAccessory> = new Map();
+  public readonly discoveredCacheUUIDs: string[] = [];
+
+  // This is only required when using Custom Services and Characteristics not support by HomeKit
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  public readonly CustomServices: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  public readonly CustomCharacteristics: any;
+
+  // custom properties
   public readonly instances: AccessoryBase[] = [];
   public blindsController: BlindsController;
 
@@ -50,18 +55,26 @@ export class LoxoneControlPlatform implements DynamicPlatformPlugin {
   } = {};
 
   constructor(
-    public readonly log: Logger,
+    public readonly log: Logging,
     public readonly config: PlatformConfig,
     public readonly api: API
   ) {
-    this.log.debug("Finished initializing platform:", this.config.platform);
+    this.Service = api.hap.Service;
+    this.Characteristic = api.hap.Characteristic;
+
+    // This is only required when using Custom Services and Characteristics not support by HomeKit
+    this.CustomServices = new EveHomeKitTypes(this.api).Services;
+    this.CustomCharacteristics = new EveHomeKitTypes(this.api).Characteristics;
+
+    this.log.debug("Finished initializing platform:", this.config.name);
 
     // When this event is fired it means Homebridge has restored all cached accessories from disk.
     // Dynamic Platform plugins should only register new accessories after this event was fired,
     // in order to ensure they weren't added to homebridge already. This event can also be used
     // to start discovery of new accessories.
-    this.api.on(APIEvent.DID_FINISH_LAUNCHING, () => {
-      // run the method to discover / register your devices as accessories (from config)
+    this.api.on("didFinishLaunching", () => {
+      log.debug("Executed didFinishLaunching callback");
+      // run the method to discover / register your devices as accessories
       this.discoverDevices();
     });
 
@@ -80,6 +93,101 @@ export class LoxoneControlPlatform implements DynamicPlatformPlugin {
     this.setAccessoryStateOn = this.setAccessoryStateOn.bind(this);
   }
 
+  /**
+   * This function is invoked when homebridge restores cached accessories from disk at startup.
+   * It should be used to set up event handlers for characteristics and update respective values.
+   */
+  configureAccessory(accessory: PlatformAccessory) {
+    this.log.info("Loading accessory from cache:", accessory.displayName);
+
+    // add the restored accessory to the accessories cache, so we can track if it has already been registered
+    this.accessories.set(accessory.UUID, accessory);
+  }
+
+  /**
+   * This is an example method showing how to register discovered accessories.
+   * Accessories must only be registered once, previously created accessories
+   * must not be registered again to prevent "duplicate UUID" errors.
+   */
+  discoverDevices() {
+    if (!this.config.devices) {
+      return;
+    }
+    const devices = this.config.devices;
+
+    // loop over the discovered devices and register each one if it has not already been registered
+    for (const device of devices) {
+      // generate a unique id for the accessory this should be generated from
+      // something globally unique, but constant, for example, the device serial
+      // number or MAC address
+      const uuid = this.api.hap.uuid.generate(device.identifier);
+
+      // see if an accessory with the same uuid has already been registered and restored from
+      // the cached devices we stored in the `configureAccessory` method above
+      const existingAccessory = this.accessories.get(uuid);
+
+      if (existingAccessory) {
+        // the accessory already exists
+        this.log.info(
+          "Restoring existing accessory from cache:",
+          existingAccessory.displayName
+        );
+
+        // if you need to update the accessory.context then you should run `api.updatePlatformAccessories`. eg.:
+        existingAccessory.context.device = device;
+        this.api.updatePlatformAccessories([existingAccessory]);
+
+        // create the accessory handler for the restored accessory
+        // this is imported from `platformAccessory.ts`
+        const instance = this.createDeviceInstance(
+          device.identifier,
+          existingAccessory
+        );
+        if (!instance) {
+          continue;
+        }
+        this.instances.push(instance);
+
+        // it is possible to remove platform accessories at any time using `api.unregisterPlatformAccessories`, eg.:
+        // remove platform accessories when no longer present
+        // this.api.unregisterPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [existingAccessory]);
+        this.log.info(
+          "Removing existing accessory from cache:",
+          existingAccessory.displayName
+        );
+      } else {
+        // the accessory does not yet exist, so we need to create it
+        this.log.info("Adding new accessory:", device.name);
+
+        // create a new accessory
+        const accessory = new this.api.platformAccessory(device.name, uuid);
+
+        // store a copy of the device object in the `accessory.context`
+        // the `context` property can be used to store any data about the accessory you may need
+        accessory.context.device = device;
+
+        // create the accessory handler for the newly create accessory
+        // this is imported from `platformAccessory.ts`
+        const instance = this.createDeviceInstance(
+          device.identifier,
+          accessory
+        );
+        if (!instance) {
+          continue;
+        }
+        this.instances.push(instance);
+
+        // link the accessory to your platform
+        this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [
+          accessory,
+        ]);
+      }
+    }
+  }
+
+  /**
+   * Custom code of the loxone platform plugin
+   */
   createHttpService() {
     if (
       !this.config.loxoneMiniServerId ||
@@ -158,17 +266,6 @@ export class LoxoneControlPlatform implements DynamicPlatformPlugin {
     response.end();
   }
 
-  /**
-   * This function is invoked when homebridge restores cached accessories from disk at startup.
-   * It should be used to setup event handlers for characteristics and update respective values.
-   */
-  configureAccessory(accessory: PlatformAccessory) {
-    this.log.info("Loading accessory from cache:", accessory.displayName);
-
-    // add the restored accessory to the accessories cache so we can track if it has already been registered
-    this.accessories.push(accessory);
-  }
-
   async toggleAccessoryState(identifier: string) {
     return this.instances
       .find((instance) => instance.identifier === identifier)
@@ -204,89 +301,6 @@ export class LoxoneControlPlatform implements DynamicPlatformPlugin {
         await sleep(4000);
         await sendCommand(this, identifier, ["reset"]);
         break;
-    }
-  }
-
-  /**
-   * This is an example method showing how to register discovered accessories.
-   * Accessories must only be registered once, previously created accessories
-   * must not be registered again to prevent "duplicate UUID" errors.
-   */
-  discoverDevices() {
-    if (!this.config.devices) {
-      return;
-    }
-    const devices = this.config.devices;
-
-    // loop over the discovered devices and register each one if it has not already been registered
-    for (const device of devices) {
-      // generate a unique id for the accessory this should be generated from
-      // something globally unique, but constant, for example, the device serial
-      // number or MAC address
-      const uuid = this.api.hap.uuid.generate(device.identifier);
-
-      // see if an accessory with the same uuid has already been registered and restored from
-      // the cached devices we stored in the `configureAccessory` method above
-      const existingAccessory = this.accessories.find(
-        (accessory) => accessory.UUID === uuid
-      );
-
-      if (existingAccessory) {
-        // the accessory already exists
-        this.log.info(
-          "Restoring existing accessory from cache:",
-          existingAccessory.displayName
-        );
-
-        // if you need to update the accessory.context then you should run `api.updatePlatformAccessories`. eg.:
-        existingAccessory.context.device = device;
-        this.api.updatePlatformAccessories([existingAccessory]);
-
-        // create the accessory handler for the restored accessory
-        // this is imported from `platformAccessory.ts`
-        const instance = this.createDeviceInstance(
-          device.identifier,
-          existingAccessory
-        );
-        if (!instance) {
-          continue;
-        }
-        this.instances.push(instance);
-
-        // it is possible to remove platform accessories at any time using `api.unregisterPlatformAccessories`, eg.:
-        // remove platform accessories when no longer present
-        // this.api.unregisterPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [existingAccessory]);
-        this.log.info(
-          "Removing existing accessory from cache:",
-          existingAccessory.displayName
-        );
-      } else {
-        // the accessory does not yet exist, so we need to create it
-        this.log.info("Adding new accessory:", device.name);
-
-        // create a new accessory
-        const accessory = new this.api.platformAccessory(device.name, uuid);
-
-        // store a copy of the device object in the `accessory.context`
-        // the `context` property can be used to store any data about the accessory you may need
-        accessory.context.device = device;
-
-        // create the accessory handler for the newly create accessory
-        // this is imported from `platformAccessory.ts`
-        const instance = this.createDeviceInstance(
-          device.identifier,
-          accessory
-        );
-        if (!instance) {
-          continue;
-        }
-        this.instances.push(instance);
-
-        // link the accessory to your platform
-        this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [
-          accessory,
-        ]);
-      }
     }
   }
 
@@ -392,7 +406,7 @@ export class LoxoneControlPlatform implements DynamicPlatformPlugin {
     }
     if (identifier.includes("Beschattung")) {
       newState.forEach(
-        ((val) => {
+        ((val: any) => {
           const subIdentifier = `Beschattung:type=Jalousie:${val.controlUUID}`;
           const existingInstance = this.instances.find((inst) =>
             inst.identifier.includes(subIdentifier)

@@ -1,8 +1,8 @@
 import { CharacteristicValue, PlatformAccessory } from "homebridge";
-import { AccessoryBase } from "./accessoryBase";
-import { LoxoneControlPlatform } from "./platform";
-import { sendCommand } from "./loxone/utils/sendCommand";
-import { States } from "./loxone/types";
+import { AccessoryBase } from "./accessoryBase.js";
+import { LoxoneControlPlatform } from "./platform.js";
+import { sendCommand } from "./loxone/utils/sendCommand.js";
+import { States } from "./loxone/types.js";
 
 export class PlatformOutletAccessory extends AccessoryBase {
   constructor(

@@ -1,7 +1,7 @@
 import { CharacteristicValue, PlatformAccessory } from "homebridge";
-import { AccessoryBase } from "./accessoryBase";
-import { LoxoneControlPlatform } from "./platform";
-import { States } from "./loxone/types";
+import { AccessoryBase } from "./accessoryBase.js";
+import { LoxoneControlPlatform } from "./platform.js";
+import { States } from "./loxone/types.js";
 
 export class PlatformTemperatureAccessory extends AccessoryBase {
   constructor(

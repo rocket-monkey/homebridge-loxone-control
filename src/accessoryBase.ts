@@ -1,6 +1,6 @@
 import { PlatformAccessory, Service } from "homebridge";
-import { LoxoneControlPlatform } from "./platform";
-import { States } from "./loxone/types";
+import { LoxoneControlPlatform } from "./platform.js";
+import { States } from "./loxone/types.js";
 
 export class AccessoryBase {
   public service: Service | undefined;

@@ -1,10 +1,10 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable indent */
 import { CharacteristicValue, PlatformAccessory, Service } from "homebridge";
-import { AccessoryBase } from "./accessoryBase";
-import { BlindsTilt, States } from "./loxone/types";
-import { LoxoneControlPlatform } from "./platform";
-import { getTiltPositionFromTransforms } from "./loxone/utils/getTiltPositionFromTransforms";
+import { AccessoryBase } from "./accessoryBase.js";
+import { BlindsTilt, States } from "./loxone/types.js";
+import { LoxoneControlPlatform } from "./platform.js";
+import { getTiltPositionFromTransforms } from "./loxone/utils/getTiltPositionFromTransforms.js";
 
 export class PlatformWindowCoveringAccessory extends AccessoryBase {
   private slatService: Service | undefined;

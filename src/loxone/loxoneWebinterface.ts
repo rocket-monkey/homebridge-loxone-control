@@ -1,11 +1,13 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import puppeteer, { Browser, Page } from "puppeteer";
-import { LoxoneControlPlatform } from "../platform";
-import username from "username";
+import { LoxoneControlPlatform } from "../platform.js";
+import * as username from "username";
 import { readFile } from "fs/promises";
 import { existsSync } from "fs";
 import { resolve } from "path";
-import { sleep } from "./utils/sleep";
+import { sleep } from "./utils/sleep.js";
+
+const __dirname = import.meta.dirname;
 
 export type LoxoneComponent = {
   identifier: string;
@@ -174,7 +176,7 @@ export class LoxoneWebinterface {
           return e;
         }
       });
-      this.collectedComponents = allCollectedComponents.map((c) => ({
+      this.collectedComponents = allCollectedComponents.map((c: any) => ({
         ...c,
         identifier: `${c.searchDescription || "unknown • unknown"}:type=${
           c.type

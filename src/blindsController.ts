@@ -1,12 +1,12 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable indent */
-import { BlindsTilt, BlindsTimingVariant, BlindsType } from "./loxone/types";
-import { getBlindsTiming } from "./loxone/utils/getBlindsTiming";
-import { sendCommand } from "./loxone/utils/sendCommand";
-import { sleep } from "./loxone/utils/sleep";
-import { toPositive } from "./loxone/utils/toPositive";
-import { LoxoneControlPlatform } from "./platform";
-import { PlatformWindowCoveringAccessory } from "./platformWindowCoveringAccessory";
+import { BlindsTilt, BlindsTimingVariant, BlindsType } from "./loxone/types.js";
+import { getBlindsTiming } from "./loxone/utils/getBlindsTiming.js";
+import { sendCommand } from "./loxone/utils/sendCommand.js";
+import { sleep } from "./loxone/utils/sleep.js";
+import { toPositive } from "./loxone/utils/toPositive.js";
+import { LoxoneControlPlatform } from "./platform.js";
+import { PlatformWindowCoveringAccessory } from "./platformWindowCoveringAccessory.js";
 
 interface MoveBlindsToPositionParams {
   value: number;
