@@ -1,5 +1,5 @@
 import { PlatformConfig } from "homebridge";
-import { BlindsTimingVariant } from "../types";
+import { BlindsTimingVariant } from "../types.js";
 
 export const LoggiaRolloTiming = 58;
 export const WindowRolloTiming = 40;

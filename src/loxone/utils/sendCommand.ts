@@ -1,6 +1,9 @@
-import { LoxoneControlPlatform } from "../../platform";
+import { LoxoneControlPlatform } from "../../platform.js";
 
-export const sendCommand = async (platform: LoxoneControlPlatform, ...args) => {
+export const sendCommand = async (
+  platform: LoxoneControlPlatform,
+  ...args: any[]
+) => {
   platform.log.debug(
     `   🔌 sendCommand over websocket: ${JSON.stringify(args)}`
   );

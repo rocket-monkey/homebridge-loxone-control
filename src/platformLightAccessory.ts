@@ -1,21 +1,21 @@
 import { CharacteristicValue, PlatformAccessory } from "homebridge";
-import { AccessoryBase } from "./accessoryBase";
-import { sendCommand } from "./loxone/utils/sendCommand";
-import { LoxoneControlPlatform } from "./platform";
-import { States } from "./loxone/types";
+import { AccessoryBase } from "./accessoryBase.js";
+import { sendCommand } from "./loxone/utils/sendCommand.js";
+import { LoxoneControlPlatform } from "./platform.js";
+import { States } from "./loxone/types.js";
 
 export class PlatformLightAccessory extends AccessoryBase {
   constructor(
     public readonly platform: LoxoneControlPlatform,
     public readonly accessory: PlatformAccessory,
-    public readonly identifier: string
+    public readonly identifier: string,
   ) {
     super(platform, accessory, identifier);
     this.accessory
       .getService(this.platform.Service.AccessoryInformation)!
       .setCharacteristic(
         this.platform.Characteristic.Manufacturer,
-        "Homebrdige Loxone Puppeteer by @rvetere"
+        "Homebrdige Loxone Puppeteer by @rvetere",
       )
       .setCharacteristic(this.platform.Characteristic.Model, "Loxone Light")
       .setCharacteristic(this.platform.Characteristic.SerialNumber, "🤖");
@@ -26,7 +26,7 @@ export class PlatformLightAccessory extends AccessoryBase {
 
     this.service.setCharacteristic(
       this.platform.Characteristic.Name,
-      accessory.context.device.name
+      accessory.context.device.name,
     );
 
     this.service
@@ -51,7 +51,7 @@ export class PlatformLightAccessory extends AccessoryBase {
     this.platform.log.info(
       `💡 Control light switch "${name}" from ${
         this.states.On ? "On" : "Off"
-      } to ${value ? "On" : "Off"}`
+      } to ${value ? "On" : "Off"}`,
     );
     const jsError = await sendCommand(this.platform, this.identifier, [
       value ? "on" : "off",
@@ -74,7 +74,7 @@ export class PlatformLightAccessory extends AccessoryBase {
 
     const { name } = this.accessory.context.device;
     this.platform.log.info(
-      `💡 Control brightness "${name}" from ${this.states.Brightness}% to ${value}%`
+      `💡 Control brightness "${name}" from ${this.states.Brightness}% to ${value}%`,
     );
     const jsError = await sendCommand(this.platform, this.identifier, [
       `${value}`,
@@ -99,13 +99,13 @@ export class PlatformLightAccessory extends AccessoryBase {
     }
     this.service?.updateCharacteristic(
       this.platform.Characteristic.On,
-      newStates.On
+      newStates.On,
     );
     if (this.identifier.includes("type=Dimmer")) {
       newStates.Brightness = firstValue;
       this.service?.updateCharacteristic(
         this.platform.Characteristic.Brightness,
-        newStates.Brightness
+        newStates.Brightness,
       );
     }
     this.states = newStates;

@@ -1,6 +1,6 @@
 import { PlatformAccessory, Service } from "homebridge";
-import { LoxoneControlPlatform } from "./platform";
-import { States } from "./loxone/types";
+import { LoxoneControlPlatform } from "./platform.js";
+import { States } from "./loxone/types.js";
 
 export class AccessoryBase {
   public service: Service | undefined;
@@ -9,12 +9,12 @@ export class AccessoryBase {
   constructor(
     public readonly platform: LoxoneControlPlatform,
     public readonly accessory: PlatformAccessory,
-    public readonly identifier: string
+    public readonly identifier: string,
   ) {}
 
   toggleState = async () => {
     this.platform.log.error(
-      `toggleState not implemented! (${this.identifier})`
+      `toggleState not implemented! (${this.identifier})`,
     );
   };
 

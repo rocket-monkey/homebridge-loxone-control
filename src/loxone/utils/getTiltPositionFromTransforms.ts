@@ -1,5 +1,5 @@
-import { BlindsTilt } from "../types";
-import { toPositive } from "./toPositive";
+import { BlindsTilt } from "../types.js";
+import { toPositive } from "./toPositive.js";
 
 export const getTiltPositionFromTransforms = (transformations: {
   [key: string]: string;

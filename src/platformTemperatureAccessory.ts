@@ -1,13 +1,13 @@
 import { CharacteristicValue, PlatformAccessory } from "homebridge";
-import { AccessoryBase } from "./accessoryBase";
-import { LoxoneControlPlatform } from "./platform";
-import { States } from "./loxone/types";
+import { AccessoryBase } from "./accessoryBase.js";
+import { LoxoneControlPlatform } from "./platform.js";
+import { States } from "./loxone/types.js";
 
 export class PlatformTemperatureAccessory extends AccessoryBase {
   constructor(
     public readonly platform: LoxoneControlPlatform,
     public readonly accessory: PlatformAccessory,
-    public readonly identifier: string
+    public readonly identifier: string,
   ) {
     super(platform, accessory, identifier);
     // set accessory information
@@ -15,7 +15,7 @@ export class PlatformTemperatureAccessory extends AccessoryBase {
       .getService(this.platform.Service.AccessoryInformation)!
       .setCharacteristic(
         this.platform.Characteristic.Manufacturer,
-        "Homebrdige Loxone Puppeteer by @rvetere"
+        "Homebrdige Loxone Puppeteer by @rvetere",
       )
       .setCharacteristic(this.platform.Characteristic.Model, "Loxone Light")
       .setCharacteristic(this.platform.Characteristic.SerialNumber, "🤖");
@@ -28,7 +28,7 @@ export class PlatformTemperatureAccessory extends AccessoryBase {
     // in this example we are using the name we stored in the `accessory.context` in the `discoverDevices` method.
     this.service.setCharacteristic(
       this.platform.Characteristic.Name,
-      accessory.context.device.name
+      accessory.context.device.name,
     );
 
     // each service must implement at-minimum the "required characteristics" for the given service type
@@ -68,7 +68,7 @@ export class PlatformTemperatureAccessory extends AccessoryBase {
     this.states = newStates;
     this.service?.updateCharacteristic(
       this.platform.Characteristic.CurrentTemperature,
-      this.states?.Temperature
+      this.states?.Temperature,
     );
   };
 }
