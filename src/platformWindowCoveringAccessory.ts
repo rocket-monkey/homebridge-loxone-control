@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
+ 
 /* eslint-disable indent */
 import { CharacteristicValue, PlatformAccessory, Service } from "homebridge";
 import { AccessoryBase } from "./accessoryBase.js";
@@ -17,7 +17,7 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
   constructor(
     public readonly platform: LoxoneControlPlatform,
     public readonly accessory: PlatformAccessory,
-    public readonly identifier: string
+    public readonly identifier: string,
   ) {
     super(platform, accessory, identifier);
     // set accessory information
@@ -25,7 +25,7 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
       .getService(this.platform.Service.AccessoryInformation)!
       .setCharacteristic(
         this.platform.Characteristic.Manufacturer,
-        "Homebrdige Loxone Puppeteer by @rvetere"
+        "Homebrdige Loxone Puppeteer by @rvetere",
       )
       .setCharacteristic(this.platform.Characteristic.Model, "Loxone Blinds")
       .setCharacteristic(this.platform.Characteristic.SerialNumber, "🤖");
@@ -38,7 +38,7 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
     // in this example we are using the name we stored in the `accessory.context` in the `discoverDevices` method.
     this.service.setCharacteristic(
       this.platform.Characteristic.Name,
-      accessory.context.device.name
+      accessory.context.device.name,
     );
 
     // create handlers for required characteristics
@@ -65,7 +65,7 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
         this.accessory.addService(
           this.platform.Service.Slats,
           `${device.name} Slats`,
-          `${device.room}-${device.name}-${device.type}-slats`
+          `${device.room}-${device.name}-${device.type}-slats`,
         );
       this.slatService
         .getCharacteristic(this.platform.Characteristic.CurrentSlatState)
@@ -85,7 +85,7 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
         this.accessory.addService(
           this.platform.Service.Switch,
           `${device.name} Tilted`,
-          `${device.room}-${device.name}-${device.type}-tilted`
+          `${device.room}-${device.name}-${device.type}-tilted`,
         );
 
       this.tiltedSwitchService
@@ -98,7 +98,7 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
         this.accessory.addService(
           this.platform.Service.Switch,
           `${device.name} Opened`,
-          `${device.room}-${device.name}-${device.type}-opened`
+          `${device.room}-${device.name}-${device.type}-opened`,
         );
 
       this.openedSwitchService
@@ -170,7 +170,7 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
       (() => {
         this.handleSetTargetPosition(value as number);
       }).bind(this),
-      300
+      300,
     );
   }
 
@@ -190,7 +190,7 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
           pos: this.states.Position,
           tilt,
           curr: this.states.TiltPosition,
-        })}`
+        })}`,
       );
       return;
     }
@@ -206,14 +206,14 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
       this.tilted = false;
       this.tiltedSwitchService?.updateCharacteristic(
         this.platform.Characteristic.On,
-        this.tilted
+        this.tilted,
       );
     }
     if (this.opened) {
       this.opened = false;
       this.openedSwitchService?.updateCharacteristic(
         this.platform.Characteristic.On,
-        this.opened
+        this.opened,
       );
     }
   };
@@ -247,7 +247,7 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
         : 0;
 
       newStates.TiltPosition = getTiltPositionFromTransforms(
-        newValue.transformations
+        newValue.transformations,
       );
 
       if (!isNaN(Position)) {
@@ -277,7 +277,7 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
       anyStateChanged = true;
       this.service?.updateCharacteristic(
         this.platform.Characteristic.PositionState,
-        newStates.PositionState
+        newStates.PositionState,
       );
     }
 
@@ -285,7 +285,7 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
       anyStateChanged = true;
       this.service?.updateCharacteristic(
         this.platform.Characteristic.CurrentPosition,
-        newStates.Position
+        newStates.Position,
       );
     }
 
@@ -293,7 +293,7 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
       anyStateChanged = true;
       this.service?.updateCharacteristic(
         this.platform.Characteristic.TargetPosition,
-        newStates.TargetPosition
+        newStates.TargetPosition,
       );
     }
     if (anyStateChanged) {
@@ -309,7 +309,7 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
           Position: newStates.Position,
           TiltPosition: newStates.TiltPosition,
           TargetPosition: newStates.TargetPosition,
-        })}`
+        })}`,
       );
     }
     this.states = newStates;

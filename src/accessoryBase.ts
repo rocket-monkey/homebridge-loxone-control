@@ -9,12 +9,12 @@ export class AccessoryBase {
   constructor(
     public readonly platform: LoxoneControlPlatform,
     public readonly accessory: PlatformAccessory,
-    public readonly identifier: string
+    public readonly identifier: string,
   ) {}
 
   toggleState = async () => {
     this.platform.log.error(
-      `toggleState not implemented! (${this.identifier})`
+      `toggleState not implemented! (${this.identifier})`,
     );
   };
 

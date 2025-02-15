@@ -8,14 +8,14 @@ export class PlatformOutletAccessory extends AccessoryBase {
   constructor(
     public readonly platform: LoxoneControlPlatform,
     public readonly accessory: PlatformAccessory,
-    public readonly identifier: string
+    public readonly identifier: string,
   ) {
     super(platform, accessory, identifier);
     this.accessory
       .getService(this.platform.Service.AccessoryInformation)!
       .setCharacteristic(
         this.platform.Characteristic.Manufacturer,
-        "Homebrdige Loxone Puppeteer by @rvetere"
+        "Homebrdige Loxone Puppeteer by @rvetere",
       )
       .setCharacteristic(this.platform.Characteristic.Model, "Loxone Outlet")
       .setCharacteristic(this.platform.Characteristic.SerialNumber, "🤖");
@@ -26,7 +26,7 @@ export class PlatformOutletAccessory extends AccessoryBase {
 
     this.service.setCharacteristic(
       this.platform.Characteristic.Name,
-      accessory.context.device.name
+      accessory.context.device.name,
     );
 
     this.service
@@ -44,7 +44,7 @@ export class PlatformOutletAccessory extends AccessoryBase {
     this.platform.log.info(
       `🔌 Control outlet switch "${name}" from ${
         this.states.On ? "On" : "Off"
-      } to ${value ? "On" : "Off"}`
+      } to ${value ? "On" : "Off"}`,
     );
     const jsError = await sendCommand(this.platform, this.identifier, [
       value ? "on" : "off",
@@ -83,7 +83,7 @@ export class PlatformOutletAccessory extends AccessoryBase {
     this.states = newStates;
     this.service?.updateCharacteristic(
       this.platform.Characteristic.On,
-      this.states?.On
+      this.states?.On,
     );
   };
 }

@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import type {
   API,
   Characteristic,
@@ -37,9 +39,9 @@ export class LoxoneControlPlatform implements DynamicPlatformPlugin {
   public readonly discoveredCacheUUIDs: string[] = [];
 
   // This is only required when using Custom Services and Characteristics not support by HomeKit
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   public readonly CustomServices: any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   public readonly CustomCharacteristics: any;
 
   // custom properties
@@ -57,7 +59,7 @@ export class LoxoneControlPlatform implements DynamicPlatformPlugin {
   constructor(
     public readonly log: Logging,
     public readonly config: PlatformConfig,
-    public readonly api: API
+    public readonly api: API,
   ) {
     this.Service = api.hap.Service;
     this.Characteristic = api.hap.Characteristic;
@@ -130,7 +132,7 @@ export class LoxoneControlPlatform implements DynamicPlatformPlugin {
         // the accessory already exists
         this.log.info(
           "Restoring existing accessory from cache:",
-          existingAccessory.displayName
+          existingAccessory.displayName,
         );
 
         // if you need to update the accessory.context then you should run `api.updatePlatformAccessories`. eg.:
@@ -141,7 +143,7 @@ export class LoxoneControlPlatform implements DynamicPlatformPlugin {
         // this is imported from `platformAccessory.ts`
         const instance = this.createDeviceInstance(
           device.identifier,
-          existingAccessory
+          existingAccessory,
         );
         if (!instance) {
           continue;
@@ -153,7 +155,7 @@ export class LoxoneControlPlatform implements DynamicPlatformPlugin {
         // this.api.unregisterPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [existingAccessory]);
         this.log.info(
           "Removing existing accessory from cache:",
-          existingAccessory.displayName
+          existingAccessory.displayName,
         );
       } else {
         // the accessory does not yet exist, so we need to create it
@@ -170,7 +172,7 @@ export class LoxoneControlPlatform implements DynamicPlatformPlugin {
         // this is imported from `platformAccessory.ts`
         const instance = this.createDeviceInstance(
           device.identifier,
-          accessory
+          accessory,
         );
         if (!instance) {
           continue;
@@ -203,11 +205,11 @@ export class LoxoneControlPlatform implements DynamicPlatformPlugin {
         res.setHeader("Access-Control-Allow-Origin", "*"); // This allows all origins
         res.setHeader(
           "Access-Control-Allow-Methods",
-          "GET, POST, OPTIONS, PUT, PATCH, DELETE"
+          "GET, POST, OPTIONS, PUT, PATCH, DELETE",
         );
         res.setHeader(
           "Access-Control-Allow-Headers",
-          "X-Requested-With,content-type"
+          "X-Requested-With,content-type",
         );
         res.setHeader("Access-Control-Allow-Credentials", "true");
 
@@ -221,7 +223,7 @@ export class LoxoneControlPlatform implements DynamicPlatformPlugin {
         this.handleRequest(req, res);
       });
       this.requestServer.listen(18081, () =>
-        this.log.info("Http server listening on 18081...")
+        this.log.info("Http server listening on 18081..."),
       );
     } catch (e) {
       this.log.error("Could not start http server!");
@@ -230,7 +232,7 @@ export class LoxoneControlPlatform implements DynamicPlatformPlugin {
 
   private async handleRequest(
     request: IncomingMessage,
-    response: ServerResponse
+    response: ServerResponse,
   ) {
     const [_url, query] =
       request.url && request.url.includes("?") ? request.url.split("?") : [];
@@ -250,8 +252,8 @@ export class LoxoneControlPlatform implements DynamicPlatformPlugin {
       response.writeHead(200, { "Content-Type": "application/json" });
       response.end(
         JSON.stringify(
-          this.loxoneWebinterface.collectedComponents.map((c) => c.identifier)
-        )
+          this.loxoneWebinterface.collectedComponents.map((c) => c.identifier),
+        ),
       );
       return;
     } else if (request.url?.includes("/identifyAccessory") && identifier) {
@@ -306,13 +308,13 @@ export class LoxoneControlPlatform implements DynamicPlatformPlugin {
 
   createDeviceInstance(
     identifier: string,
-    accessory: PlatformAccessory<UnknownContext>
+    accessory: PlatformAccessory<UnknownContext>,
   ) {
     const [searchDescription, typeQuery, actionUuid] = identifier.split(":");
     const [room, category] = searchDescription.split(" • ");
     const type = typeQuery.split("=")[1];
     this.log.info(
-      `🔨 Create device instance for room: "${room}", category: "${category}", type: "${type}" (${actionUuid})...`
+      `🔨 Create device instance for room: "${room}", category: "${category}", type: "${type}" (${actionUuid})...`,
     );
     switch (category) {
       case "Klima":
@@ -341,7 +343,7 @@ export class LoxoneControlPlatform implements DynamicPlatformPlugin {
 
   async onReady() {
     this.log.info(
-      `✅ LoxoneControlPlatform: web interface ready and all components collected (${this.loxoneWebinterface.collectedComponents.length})!`
+      `✅ LoxoneControlPlatform: web interface ready and all components collected (${this.loxoneWebinterface.collectedComponents.length})!`,
     );
 
     this.loxoneWebinterfaceReady = true;
@@ -359,7 +361,7 @@ export class LoxoneControlPlatform implements DynamicPlatformPlugin {
     const thirdKey = Object.keys(newValue)[2];
     const lastPart = splitTail(thirdKey, "-");
     const existingControls = this.loxoneWebinterface.collectedComponents.filter(
-      (c) => c.uuidAction.includes(lastPart)
+      (c) => c.uuidAction.includes(lastPart),
     );
     if (existingControls.length === 0) {
       return;
@@ -374,7 +376,7 @@ export class LoxoneControlPlatform implements DynamicPlatformPlugin {
       }:type=${existingControl.type}:${existingControl.uuidAction}`;
       const uuid = this.api.hap.uuid.generate(identifier);
       const existingInstance = this.instances.find(
-        (inst) => inst.accessory.UUID === uuid
+        (inst) => inst.accessory.UUID === uuid,
       );
       if (existingInstance && identifier.includes("Beschattung")) {
         existingInstance.setState(newValue);
@@ -398,7 +400,7 @@ export class LoxoneControlPlatform implements DynamicPlatformPlugin {
     // When the web interface is ready, we can update a specific accessory
     const uuid = this.api.hap.uuid.generate(identifier);
     const existingInstance = this.instances.find(
-      (inst) => inst.accessory.UUID === uuid
+      (inst) => inst.accessory.UUID === uuid,
     );
     if (existingInstance && !!newState) {
       existingInstance.setState(newState);
@@ -409,13 +411,13 @@ export class LoxoneControlPlatform implements DynamicPlatformPlugin {
         ((val: any) => {
           const subIdentifier = `Beschattung:type=Jalousie:${val.controlUUID}`;
           const existingInstance = this.instances.find((inst) =>
-            inst.identifier.includes(subIdentifier)
+            inst.identifier.includes(subIdentifier),
           );
 
           if (existingInstance) {
             existingInstance.setState([val]);
           }
-        }).bind(this)
+        }).bind(this),
       );
       return;
     }
