@@ -1,10 +1,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import puppeteer, { Browser, Page } from "puppeteer";
-import { LoxoneControlPlatform } from "../platform.js";
-import * as username from "username";
-import { readFile } from "fs/promises";
 import { existsSync } from "fs";
+import { readFile } from "fs/promises";
 import { resolve } from "path";
+import puppeteer, { Browser, Page } from "puppeteer";
+import { usernameSync } from "username";
+import { LoxoneControlPlatform } from "../platform.js";
 import { sleep } from "./utils/sleep.js";
 
 const __dirname = import.meta.dirname;
@@ -49,7 +49,7 @@ export class LoxoneWebinterface {
 
     if (!this.browser) {
       try {
-        const isRoot = username.sync() === "root";
+        const isRoot = usernameSync() === "root";
         if (this.platform.config.chromiumPath) {
           // check if chromium path exists
           if (!existsSync(this.platform.config.chromiumPath)) {
