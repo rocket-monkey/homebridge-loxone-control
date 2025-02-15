@@ -3,7 +3,6 @@
   "name": "homebridge-loxone-control",
   "type": "module",
   "version": "1.3.3",
-  "private": true,
   "description": "Homebridge plugin to control a loxone system trough the web-interface - useful if you have zero access to the Miniserver",
   "author": "Remo Vetere <remo.vetere@gmail.com>",
   "license": "Apache-2.0",
