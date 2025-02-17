@@ -6,7 +6,7 @@
   "description": "Homebridge plugin to control a loxone system trough the web-interface - useful if you have zero access to the Miniserver",
   "author": "Remo Vetere <remo.vetere@gmail.com>",
   "license": "Apache-2.0",
-  "homepage": "https://github.com/USERNAME/GITHUB_PROJECT_NAME#readme",
+  "homepage": "https://github.com/rocket-monkey/homebridge-loxone-control#readme",
   "repository": {
     "type": "git",
     "url": "https://github.com/rocket-monkey/homebridge-loxone-control.git"
