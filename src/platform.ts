@@ -24,6 +24,7 @@ import { PlatformLightAccessory } from "./platformLightAccessory.js";
 import { PlatformOutletAccessory } from "./platformOutletAccessory.js";
 import { PlatformTemperatureAccessory } from "./platformTemperatureAccessory.js";
 import { PlatformWindowCoveringAccessory } from "./platformWindowCoveringAccessory.js";
+import { Logger } from "./logger.js";
 
 /**
  * HomebridgePlatform
@@ -39,12 +40,13 @@ export class LoxoneControlPlatform implements DynamicPlatformPlugin {
   public readonly discoveredCacheUUIDs: string[] = [];
 
   // This is only required when using Custom Services and Characteristics not support by HomeKit
-   
+
   public readonly CustomServices: any;
-   
+
   public readonly CustomCharacteristics: any;
 
   // custom properties
+  public readonly logger: Logger;
   public readonly instances: AccessoryBase[] = [];
   public blindsController: BlindsController;
 
@@ -63,19 +65,20 @@ export class LoxoneControlPlatform implements DynamicPlatformPlugin {
   ) {
     this.Service = api.hap.Service;
     this.Characteristic = api.hap.Characteristic;
+    this.logger = new Logger(this);
 
     // This is only required when using Custom Services and Characteristics not support by HomeKit
     this.CustomServices = new EveHomeKitTypes(this.api).Services;
     this.CustomCharacteristics = new EveHomeKitTypes(this.api).Characteristics;
 
-    this.log.debug("Finished initializing platform:", this.config.name);
+    this.logger.debug("Finished initializing platform:", this.config.name);
 
     // When this event is fired it means Homebridge has restored all cached accessories from disk.
     // Dynamic Platform plugins should only register new accessories after this event was fired,
     // in order to ensure they weren't added to homebridge already. This event can also be used
     // to start discovery of new accessories.
     this.api.on("didFinishLaunching", () => {
-      log.debug("Executed didFinishLaunching callback");
+      this.logger.debug("Executed didFinishLaunching callback");
       // run the method to discover / register your devices as accessories
       this.discoverDevices();
     });
@@ -100,7 +103,7 @@ export class LoxoneControlPlatform implements DynamicPlatformPlugin {
    * It should be used to set up event handlers for characteristics and update respective values.
    */
   configureAccessory(accessory: PlatformAccessory) {
-    this.log.info("Loading accessory from cache:", accessory.displayName);
+    this.logger.info("Loading accessory from cache:", accessory.displayName);
 
     // add the restored accessory to the accessories cache, so we can track if it has already been registered
     this.accessories.set(accessory.UUID, accessory);
@@ -130,7 +133,7 @@ export class LoxoneControlPlatform implements DynamicPlatformPlugin {
 
       if (existingAccessory) {
         // the accessory already exists
-        this.log.info(
+        this.logger.info(
           "Restoring existing accessory from cache:",
           existingAccessory.displayName,
         );
@@ -153,13 +156,13 @@ export class LoxoneControlPlatform implements DynamicPlatformPlugin {
         // it is possible to remove platform accessories at any time using `api.unregisterPlatformAccessories`, eg.:
         // remove platform accessories when no longer present
         // this.api.unregisterPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [existingAccessory]);
-        this.log.info(
+        this.logger.info(
           "Removing existing accessory from cache:",
           existingAccessory.displayName,
         );
       } else {
         // the accessory does not yet exist, so we need to create it
-        this.log.info("Adding new accessory:", device.name);
+        this.logger.info("Adding new accessory:", device.name);
 
         // create a new accessory
         const accessory = new this.api.platformAccessory(device.name, uuid);
@@ -223,10 +226,10 @@ export class LoxoneControlPlatform implements DynamicPlatformPlugin {
         this.handleRequest(req, res);
       });
       this.requestServer.listen(18081, () =>
-        this.log.info("Http server listening on 18081..."),
+        this.logger.info("Http server listening on 18081..."),
       );
     } catch (e) {
-      this.log.error("Could not start http server!");
+      this.logger.error("Could not start http server!");
     }
   }
 
@@ -240,7 +243,7 @@ export class LoxoneControlPlatform implements DynamicPlatformPlugin {
     const identifier = identifierRaw ? decodeURIComponent(identifierRaw) : null;
 
     if (request.url === "/discoverDevices") {
-      this.log.debug("🔎 Discover devices request received...");
+      this.logger.debug("🔎 Discover devices request received...");
       if (!this.loxoneWebinterfaceReady) {
         let tries = 0;
         while (!this.loxoneWebinterfaceReady && tries < 4) {
@@ -313,7 +316,7 @@ export class LoxoneControlPlatform implements DynamicPlatformPlugin {
     const [searchDescription, typeQuery, actionUuid] = identifier.split(":");
     const [room, category] = searchDescription.split(" • ");
     const type = typeQuery.split("=")[1];
-    this.log.info(
+    this.logger.info(
       `🔨 Create device instance for room: "${room}", category: "${category}", type: "${type}" (${actionUuid})...`,
     );
     switch (category) {
@@ -342,7 +345,7 @@ export class LoxoneControlPlatform implements DynamicPlatformPlugin {
   }
 
   async onReady() {
-    this.log.info(
+    this.logger.info(
       `✅ LoxoneControlPlatform: web interface ready and all components collected (${this.loxoneWebinterface.collectedComponents.length})!`,
     );
 

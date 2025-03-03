@@ -13,13 +13,15 @@ export class AccessoryBase {
   ) {}
 
   toggleState = async () => {
-    this.platform.log.error(
+    this.platform.logger.error(
       `toggleState not implemented! (${this.identifier})`,
     );
   };
 
   setStateOn = async () => {
-    this.platform.log.error(`setStateOn not implemented! (${this.identifier})`);
+    this.platform.logger.error(
+      `setStateOn not implemented! (${this.identifier})`,
+    );
   };
 
   setState = (newStates: States) => {

@@ -72,6 +72,11 @@
         "type": "string",
         "default": "23"
       },
+      "verboseLogging": {
+        "title": "Verbose Logging, by default only errors are logged",
+        "type": "boolean",
+        "default": false
+      },
       "devices": {
         "type": "array",
         "additionalItems": true,
