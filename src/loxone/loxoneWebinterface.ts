@@ -34,7 +34,7 @@ export class LoxoneWebinterface {
   private preventStandbyInterval: NodeJS.Timer | undefined;
 
   constructor(public readonly platform: LoxoneControlPlatform) {
-    this.platform.log.debug("LoxoneWebinterface constructor");
+    this.platform.logger.debug("LoxoneWebinterface constructor");
     this.init = this.init.bind(this);
     this.getLoxoneCredentials = this.getLoxoneCredentials.bind(this);
   }
@@ -44,8 +44,8 @@ export class LoxoneWebinterface {
     if (!serverUrl || !user || !password) {
       return;
     }
-    this.platform.log.info(`🚀 Initializing loxone web interface..`);
-    this.platform.log.debug(`🔗 Open URL "${serverUrl}" and login...`);
+    this.platform.logger.info(`🚀 Initializing loxone web interface..`);
+    this.platform.logger.debug(`🔗 Open URL "${serverUrl}" and login...`);
 
     if (!this.browser) {
       try {
@@ -53,13 +53,13 @@ export class LoxoneWebinterface {
         if (this.platform.config.chromiumPath) {
           // check if chromium path exists
           if (!existsSync(this.platform.config.chromiumPath)) {
-            this.platform.log.error(
+            this.platform.logger.error(
               `Chromium path does not exist: ${this.platform.config.chromiumPath}`
             );
             return;
           }
 
-          this.platform.log.debug(
+          this.platform.logger.debug(
             "Starting new instance of Chromium: " +
               this.platform.config.chromiumPath
           );
@@ -68,18 +68,18 @@ export class LoxoneWebinterface {
             ignoreHTTPSErrors: false,
             args: isRoot ? ["--no-sandbox"] : [],
           });
-          this.platform.log.debug("Chromium started");
+          this.platform.logger.debug("Chromium started");
         } else {
           this.browser = await puppeteer.launch({
             ignoreHTTPSErrors: false,
             args: isRoot ? ["--no-sandbox"] : [],
           });
-          this.platform.log.debug(
+          this.platform.logger.debug(
             "Chrome of local package installation started"
           );
         }
       } catch (e) {
-        this.platform.log.error(
+        this.platform.logger.error(
           "Could not start headless browser! See https://github.com/rocket-monkey/homebridge-loxone-control?tab=readme-ov-file#setup"
         );
       }
@@ -163,7 +163,7 @@ export class LoxoneWebinterface {
         }
       }, 1000 * 30);
 
-      this.platform.log.info(
+      this.platform.logger.info(
         `✅ Login successful, loxone web interface ready!`
       );
 
@@ -182,14 +182,14 @@ export class LoxoneWebinterface {
           c.type
         }:${c.uuidAction}`,
       })) as LoxoneComponent[];
-      this.platform.log.info(
+      this.platform.logger.info(
         "🔌 All collected components: ",
         this.collectedComponents.map((c) => c.identifier)
       );
       this.platform.onReady();
     } catch (e: any) {
-      this.platform.log.error("Error during login!");
-      this.platform.log.error(e.message);
+      this.platform.logger.error("Error during login!");
+      this.platform.logger.error(e.message);
     }
   }
 
@@ -203,7 +203,7 @@ export class LoxoneWebinterface {
       return;
     }
 
-    this.platform.log.debug(`Refreshing login for loxone web interface...`);
+    this.platform.logger.debug(`Refreshing login for loxone web interface...`);
     const timestamp = new Date().getTime();
 
     try {
@@ -221,13 +221,13 @@ export class LoxoneWebinterface {
 
       const timeElapsed = new Date().getTime() - timestamp;
       // log success with time elapsed in seconds
-      this.platform.log.info(
+      this.platform.logger.info(
         `Successfully refreshed login in ${Math.floor(
           timeElapsed / 1000
         )} seconds!`
       );
     } catch (e) {
-      this.platform.log.error("Error during login: ", e);
+      this.platform.logger.error("Error during login: ", e);
     }
   }
 

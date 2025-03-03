@@ -43,7 +43,7 @@ export class BlindsController {
         clearTimeout(this.runDebounceTimer);
       }
       this.runDebounceTimer = setTimeout(() => {
-        this.platform.log.debug(
+        this.platform.logger.debug(
           `🤖 Nothing received for ${debounceDelay}ms, collected commands: [${this.runCommands.map(
             (rc) => rc.value,
           )}]`,
@@ -64,7 +64,7 @@ export class BlindsController {
           return movingDelay;
         });
         Promise.all(promises).then((delays) => {
-          this.platform.log.debug(
+          this.platform.logger.debug(
             `✅ All commands executed!, collected delays: ${JSON.stringify(
               delays.flat(),
             )}`,
@@ -103,11 +103,13 @@ export class BlindsController {
         identifier.split(":");
 
       if (this.activeTimers.has(actionUuid)) {
-        this.platform.log.debug(` > 🕰️ Clear active timer for "${actionUuid}"`);
+        this.platform.logger.debug(
+          ` > 🕰️ Clear active timer for "${actionUuid}"`,
+        );
         clearTimeout(this.activeTimers.get(actionUuid));
         this.activeTimers.delete(actionUuid);
       } else {
-        this.platform.log.debug(
+        this.platform.logger.debug(
           ` > 🕰️ No active timer for "${actionUuid}", ${JSON.stringify(
             this.activeTimers.get(actionUuid),
           )}`,
@@ -153,7 +155,7 @@ export class BlindsController {
         states.PositionState !==
         this.platform.Characteristic.PositionState.STOPPED;
       if (isAlreadyRunning && isPositionStateChanged) {
-        this.platform.log.debug(
+        this.platform.logger.debug(
           `   🔥 Blinds "${
             accessory.context.device.name
           }" are already running and will have a new direction, stop them! ${JSON.stringify(
@@ -163,7 +165,7 @@ export class BlindsController {
         await sendCommand(this.platform, identifier, ["FullDown"]);
         await sleep(500);
       } else if (isAlreadyRunning && !isPositionStateChanged) {
-        this.platform.log.debug(
+        this.platform.logger.debug(
           `   👌 Blinds "${accessory.context.device.name}" are already running in the correct direction, do not stop them!`,
         );
       }
@@ -180,7 +182,7 @@ export class BlindsController {
           );
         }
         const { name } = accessory.context.device;
-        this.platform.log.info(
+        this.platform.logger.info(
           `🕹️ Move jalousie "${name}" from ${states.Position}% to ${value}% (${tilt}), wait ${delay}ms to reach position`,
         );
 
@@ -193,7 +195,7 @@ export class BlindsController {
           );
 
           if (jsError) {
-            this.platform.log.error(
+            this.platform.logger.error(
               `Error in sendCommand: ${jsError as string}`,
             );
           }
@@ -213,7 +215,7 @@ export class BlindsController {
             delay,
           );
           this.activeTimers.set(actionUuid, newTimer);
-          this.platform.log.debug(
+          this.platform.logger.debug(
             ` > 🕰️ Set timer for "${actionUuid}" to ${delay}ms, ${JSON.stringify(
               this.activeTimers.has(actionUuid),
             )}`,
@@ -222,7 +224,7 @@ export class BlindsController {
       } else {
         // check if blinds are in correct slat tilt angle position
         if (tilt !== states.TiltPosition) {
-          this.platform.log.debug(
+          this.platform.logger.debug(
             `   🕹️ Move slat tilt angle only, from "${states.TargetPosition}" to "${tilt}"`,
           );
           this.moveBlindsToFinalPosition({
@@ -232,7 +234,7 @@ export class BlindsController {
             blindsType,
           });
         } else {
-          this.platform.log.debug(
+          this.platform.logger.debug(
             `   👍 Nothing to do, the blinds are already at position ${value}`,
           );
         }
@@ -240,7 +242,7 @@ export class BlindsController {
 
       return delay;
     } catch (e) {
-      this.platform.log.error(`Error in moveBlindsToPositionNow: ${e}`);
+      this.platform.logger.error(`Error in moveBlindsToPositionNow: ${e}`);
       return 0;
     }
   };
@@ -254,7 +256,7 @@ export class BlindsController {
     const { accessory } = platformAccessory;
     const { name } = accessory.context.device;
     await sleep(800);
-    this.platform.log.debug(
+    this.platform.logger.debug(
       `   🎯 Control blinds slat tilt angle of "${name}" to final position "${JSON.stringify(
         {
           tilt,
@@ -279,19 +281,19 @@ export class BlindsController {
 
     if (isMovingDown) {
       if (tilt === "closed") {
-        this.platform.log.debug(
+        this.platform.logger.debug(
           "   👍 Nothing to do, the blinds are already closed",
         );
         return;
       } else if (tilt === "tilted") {
-        this.platform.log.debug(
+        this.platform.logger.debug(
           `   🕹️ Double click "up" button with delay of 300ms (tilt=${tilt})})`,
         );
         await this.sendMoveJalousieCommand(platformAccessory, true, "FullUp");
         await sleep(300);
         await this.sendMoveJalousieCommand(platformAccessory, false, "FullUp");
       } else if (tilt === "open") {
-        this.platform.log.debug(
+        this.platform.logger.debug(
           `   🕹️ Double click "up" button with delay of 1000ms (tilt=${tilt})})`,
         );
         await this.sendMoveJalousieCommand(platformAccessory, true, "FullUp");
@@ -300,7 +302,7 @@ export class BlindsController {
       }
     } else {
       if (tilt === "closed") {
-        this.platform.log.debug(
+        this.platform.logger.debug(
           `   🕹️ Double click "down" button with delay of 1000ms (tilt=${tilt})})`,
         );
         await this.sendMoveJalousieCommand(platformAccessory, true, "FullDown");
@@ -311,7 +313,7 @@ export class BlindsController {
           "FullDown",
         );
       } else if (tilt === "tilted") {
-        this.platform.log.debug(
+        this.platform.logger.debug(
           `   🕹️ Double click "down" button with delay of 600ms (tilt=${tilt})})`,
         );
         await this.sendMoveJalousieCommand(platformAccessory, true, "FullDown");
@@ -322,7 +324,7 @@ export class BlindsController {
           "FullDown",
         );
       } else if (tilt === "open") {
-        this.platform.log.debug(
+        this.platform.logger.debug(
           "   👍 Nothing to do, the blinds are already open",
         );
         return;

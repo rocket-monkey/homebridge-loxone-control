@@ -61,7 +61,7 @@ export class PlatformTemperatureAccessory extends AccessoryBase {
 
   setState = (newValues: States) => {
     const firstValue = newValues[Object.keys(newValues)[0]];
-    // this.platform.log.debug(`🥶 setState: ${JSON.stringify({ firstValue })}`);
+    // this.platform.logger.debug(`🥶 setState: ${JSON.stringify({ firstValue })}`);
     const newStates: States = {
       Temperature: firstValue,
     };

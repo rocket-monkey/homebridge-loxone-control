@@ -41,7 +41,7 @@ export class PlatformOutletAccessory extends AccessoryBase {
     }
 
     const { name } = this.accessory.context.device;
-    this.platform.log.info(
+    this.platform.logger.info(
       `🔌 Control outlet switch "${name}" from ${
         this.states.On ? "On" : "Off"
       } to ${value ? "On" : "Off"}`,
@@ -50,7 +50,7 @@ export class PlatformOutletAccessory extends AccessoryBase {
       value ? "on" : "off",
     ]);
     if (jsError) {
-      this.platform.log.error(`Error in sendCommand: ${jsError as string}`);
+      this.platform.logger.error(`Error in sendCommand: ${jsError as string}`);
     }
   }
 

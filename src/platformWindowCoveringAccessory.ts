@@ -1,4 +1,3 @@
- 
 /* eslint-disable indent */
 import { CharacteristicValue, PlatformAccessory, Service } from "homebridge";
 import { AccessoryBase } from "./accessoryBase.js";
@@ -184,7 +183,7 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
       Math.abs(value - this.states.Position) < 6 &&
       tilt === this.states.TiltPosition
     ) {
-      this.platform.log.debug(
+      this.platform.logger.debug(
         `   🚨 Too close, skip! ${JSON.stringify({
           value,
           pos: this.states.Position,
@@ -298,7 +297,7 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
     }
     if (anyStateChanged) {
       const { name } = this.accessory.context.device;
-      this.platform.log.debug(
+      this.platform.logger.debug(
         `ℹ️ State change for "${name}": ${JSON.stringify({
           PositionState:
             newStates.PositionState === 2

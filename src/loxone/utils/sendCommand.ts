@@ -1,10 +1,11 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { LoxoneControlPlatform } from "../../platform.js";
 
 export const sendCommand = async (
   platform: LoxoneControlPlatform,
   ...args: any[]
 ) => {
-  platform.log.debug(
+  platform.logger.debug(
     `   🔌 sendCommand over websocket: ${JSON.stringify(args)}`
   );
   const jsError = await platform
