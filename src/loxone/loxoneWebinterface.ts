@@ -44,7 +44,7 @@ export class LoxoneWebinterface {
     if (!serverUrl || !user || !password) {
       return;
     }
-    this.platform.logger.info(`🚀 Initializing loxone web interface..`);
+    this.platform.logger.info("🚀 Initializing loxone web interface..");
     this.platform.logger.debug(`🔗 Open URL "${serverUrl}" and login...`);
 
     if (!this.browser) {
@@ -111,15 +111,29 @@ export class LoxoneWebinterface {
     // Listen for each network request
     await this.page?.setRequestInterception(true);
     this.page?.on("request", async (request) => {
-      if (request.url().includes("comps.js?v=15.0.1")) {
-        // Read the modified script content
-        const patched = await readFile(
-          resolve(__dirname, "scripts/comps.js-v15.0.1.js"),
-          "utf-8"
-        );
-        // search for "this._initStatesSrc()," and change to
-        // "this._initStatesSrc(),window.collection=window.collection?window.collection:[],window.collection.push(this),"
-        // then, search for "newStatesReceived" and add at the beginning of the function "window.LoxoneControlPlatformStatusBefore(v);" and just before the "}else", "window.LoxoneControlPlatformStatus(this);"
+      if (request.url().includes("comps.js")) {
+        let patched = "";
+        if (request.url().includes("comps.js?v=15.3.2")) {
+          patched = await readFile(
+            resolve(__dirname, "scripts/comps.js-v15.3.2.js"),
+            "utf-8"
+          );
+        } else if (request.url().includes("comps.js?v=15.1.2")) {
+          patched = await readFile(
+            resolve(__dirname, "scripts/comps.js-v15.1.2.js"),
+            "utf-8"
+          );
+        } else if (request.url().includes("comps.js?v=15.0.1")) {
+          patched = await readFile(
+            resolve(__dirname, "scripts/comps.js-v15.0.1.js"),
+            "utf-8"
+          );
+        } else if (request.url().includes("comps.js?v=14.0.2")) {
+          patched = await readFile(
+            resolve(__dirname, "scripts/comps.js-v14.0.2.js"),
+            "utf-8"
+          );
+        }
 
         // Respond with the modified script
         request.respond({
@@ -145,7 +159,7 @@ export class LoxoneWebinterface {
       await this.page.waitForNavigation();
 
       await this.page.waitForFunction(
-        `!document.querySelector("body").innerText.includes("Loading Script ")`
+        '!document.querySelector("body").innerText.includes("Loading Script ")'
       );
       await sleep(1000 * 2);
 
@@ -164,7 +178,7 @@ export class LoxoneWebinterface {
       }, 1000 * 30);
 
       this.platform.logger.info(
-        `✅ Login successful, loxone web interface ready!`
+        "✅ Login successful, loxone web interface ready!"
       );
 
       await sleep(1000 * 2);
@@ -203,7 +217,7 @@ export class LoxoneWebinterface {
       return;
     }
 
-    this.platform.logger.debug(`Refreshing login for loxone web interface...`);
+    this.platform.logger.debug("Refreshing login for loxone web interface...");
     const timestamp = new Date().getTime();
 
     try {
@@ -216,7 +230,7 @@ export class LoxoneWebinterface {
       await this.page?.waitForNavigation();
 
       await this.page?.waitForFunction(
-        `!document.querySelector("body").innerText.includes("Loading Script ")`
+        '!document.querySelector("body").innerText.includes("Loading Script ")'
       );
 
       const timeElapsed = new Date().getTime() - timestamp;
