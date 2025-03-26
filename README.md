@@ -114,6 +114,12 @@ The plugin allows to control all values that need to be matched with your specif
 ]
 ```
 
+| Property      | Description                                               |
+| ------------- | --------------------------------------------------------- |
+| name          | The name of the device in HomeKit                         |
+| identifier    | The identifier of the device in Loxone                    |
+| fanAddButtons | All levels you want to control added as a button for each |
+
 ### Temperature Sensor
 
 ```json
