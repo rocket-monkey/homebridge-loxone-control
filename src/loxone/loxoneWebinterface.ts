@@ -112,6 +112,10 @@ export class LoxoneWebinterface {
     await this.page?.setRequestInterception(true);
     this.page?.on("request", async (request) => {
       if (request.url().includes("comps.js")) {
+        // search for "this._initStatesSrc()," and change to
+        // "this._initStatesSrc(),window.collection=window.collection?window.collection:[],window.collection.push(this),"
+        // then, search for "newStatesReceived" and add at the beginning of the function "window.LoxoneControlPlatformStatusBefore(v);" and just before the "}else", "window.LoxoneControlPlatformStatus(this);"
+        
         let patched = "";
         if (request.url().includes("comps.js?v=15.3.2")) {
           patched = await readFile(
@@ -131,7 +135,12 @@ export class LoxoneWebinterface {
         } else if (request.url().includes("comps.js?v=14.0.2")) {
           patched = await readFile(
             resolve(__dirname, "scripts/comps.js-v14.0.2.js"),
-            "utf-8"
+            "utf-8",
+          );
+        } else if (request.url().includes("comps.js?v=16.0.0")) {
+          patched = await readFile(
+            resolve(__dirname, "scripts/comps.js-v16.0.0.js"),
+            "utf-8",
           );
         }
 
