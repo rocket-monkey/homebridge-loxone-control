@@ -115,17 +115,22 @@ export class LoxoneControlPlatform implements DynamicPlatformPlugin {
    * must not be registered again to prevent "duplicate UUID" errors.
    */
   discoverDevices() {
+    this.logger.info("🔍 discoverDevices called");
     if (!this.config.devices) {
+      this.logger.info("⚠️ No devices configured in config.devices");
       return;
     }
     const devices = this.config.devices;
+    this.logger.info(`🔍 Found ${devices.length} devices in config:`, devices.map((d: any) => d.name));
 
     // loop over the discovered devices and register each one if it has not already been registered
     for (const device of devices) {
+      this.logger.info(`🔍 Processing device: ${device.name} with identifier: ${device.identifier}`);
       // generate a unique id for the accessory this should be generated from
       // something globally unique, but constant, for example, the device serial
       // number or MAC address
       const uuid = this.api.hap.uuid.generate(device.identifier);
+      this.logger.info(`🔍 Generated UUID: ${uuid}`);
 
       // see if an accessory with the same uuid has already been registered and restored from
       // the cached devices we stored in the `configureAccessory` method above
@@ -333,6 +338,42 @@ export class LoxoneControlPlatform implements DynamicPlatformPlugin {
       case "Lüftung":
         return new PlatformFanAccessory(this, accessory, identifier);
       default:
+        // Check for blinds/shades (Jalousie, Markise)
+        if (category === "Jalousie" || category === "Jalousie Loggia" || category.includes("Markise")) {
+          this.logger.info(`🔨 Detected window covering accessory based on category: "${category}"`);
+          return new PlatformWindowCoveringAccessory(this, accessory, identifier);
+        }
+        
+        // Check for lighting (Deckenleuchte, Deckenspots, Deckenspot, Spot, Leuchte, Spiegelschrank, Schalter)
+        if (category.includes("Deckenleuchte") || category.includes("Deckenspots") || category === "Deckenspot" || 
+            category.includes("Spot") || category.includes("Leuchte") || category === "Spiegelschrank" || 
+            category === "Schalter" || category.includes("Steckdosen")) {
+          this.logger.info(`🔨 Detected lighting accessory based on category: "${category}"`);
+          if (accessory.context.device.lightOutlet) {
+            return new PlatformOutletAccessory(this, accessory, identifier);
+          }
+          return new PlatformLightAccessory(this, accessory, identifier);
+        }
+        
+        // Check for fans (Lüfter, Ventilator)
+        if (category === "Lüfter" || category === "Ventilator") {
+          this.logger.info(`🔨 Detected fan accessory based on category: "${category}"`);
+          return new PlatformFanAccessory(this, accessory, identifier);
+        }
+        
+        // Check for temperature sensors (Temperatur)
+        if (category === "Temperatur") {
+          this.logger.info(`🔨 Detected temperature accessory based on category: "${category}"`);
+          return new PlatformTemperatureAccessory(this, accessory, identifier);
+        }
+        
+        // Check for switches that should be lights (Abwesenheit Heizung, etc.)
+        if (category.includes("Heizung") || category.includes("Abwesenheit")) {
+          this.logger.info(`🔨 Detected switch accessory based on category: "${category}"`);
+          return new PlatformLightAccessory(this, accessory, identifier);
+        }
+        
+        this.logger.error(`🔨 Unknown category: "${category}", returning null`);
         return null;
     }
   }
@@ -354,17 +395,39 @@ export class LoxoneControlPlatform implements DynamicPlatformPlugin {
     this.createHttpService();
 
     this.instances.forEach((instance) => {
-      if (this.allStates[instance.identifier]) {
-        instance.setState(this.allStates[instance.identifier]);
+      let foundState = this.allStates[instance.identifier];
+      
+      if (!foundState) {
+        // Fallback: try to find state by matching type and UUID suffix
+        const [, typeQuery, actionUuid] = instance.identifier.split(":");
+        const type = typeQuery.split("=")[1];
+        
+        for (const stateKey in this.allStates) {
+          const [, stateTypeQuery, stateActionUuid] = stateKey.split(":");
+          const stateType = stateTypeQuery.split("=")[1];
+          if (stateType === type && stateActionUuid === actionUuid) {
+            foundState = this.allStates[stateKey];
+            break;
+          }
+        }
+      }
+      
+      if (foundState) {
+        instance.setState(foundState);
+      } else {
+        this.logger.error(`No initial state found for ${instance.identifier}`);
       }
     });
   }
 
   onStatusUpdateBefore(newValue: any) {
-    const thirdKey = Object.keys(newValue)[2];
+    const thirdKey = Object.keys(newValue).pop();
     const lastPart = splitTail(thirdKey, "-");
     const existingControls = this.loxoneWebinterface.collectedComponents.filter(
-      (c) => c.uuidAction.includes(lastPart),
+      (c) => {
+        const result = c.uuidAction.includes(lastPart);
+        return result;
+      },
     );
     if (existingControls.length === 0) {
       return;
@@ -381,8 +444,10 @@ export class LoxoneControlPlatform implements DynamicPlatformPlugin {
       const existingInstance = this.instances.find(
         (inst) => inst.accessory.UUID === uuid,
       );
-      if (existingInstance && identifier.includes("Beschattung")) {
-        existingInstance.setState(newValue);
+      if (existingInstance) {
+        if (identifier.includes("Beschattung")) {
+          existingInstance.setState(newValue);
+        }
         return;
       }
     }
@@ -402,9 +467,24 @@ export class LoxoneControlPlatform implements DynamicPlatformPlugin {
 
     // When the web interface is ready, we can update a specific accessory
     const uuid = this.api.hap.uuid.generate(identifier);
-    const existingInstance = this.instances.find(
+    
+    let existingInstance = this.instances.find(
       (inst) => inst.accessory.UUID === uuid,
     );
+    
+    if (!existingInstance) {
+      // Fallback: try to match by type and UUID suffix when full identifier doesn't match
+      // This handles the case where status updates use German room names but config uses UUID room names
+      const [, typeQuery, actionUuid] = identifier.split(":");
+      const type = typeQuery.split("=")[1];
+      
+      existingInstance = this.instances.find((inst) => {
+        const [, instTypeQuery, instActionUuid] = inst.identifier.split(":");
+        const instType = instTypeQuery.split("=")[1];
+        return instType === type && instActionUuid === actionUuid;
+      });
+    }
+    
     if (existingInstance && !!newState) {
       existingInstance.setState(newState);
       return;
