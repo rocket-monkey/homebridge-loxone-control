@@ -13,12 +13,27 @@ export const sendCommand = async (
     ?.evaluate((passedIdentifier: string, ...passedArgs) => {
       try {
         // @ts-expect-error patched
-        const control = window.collection.find((c) => {
+        let control = window.collection.find((c) => {
           const currentIdentifier = `${
             c.searchDescription || "unknown • unknown"
           }:type=${c.type}:${c.uuidAction}`;
           return currentIdentifier === passedIdentifier;
         });
+        
+        if (!control) {
+          // Fallback: try to match by type and UUID suffix when full identifier doesn't match
+          // This handles the case where config uses German room names but Loxone uses UUID room names
+          const identifierParts = passedIdentifier.split(":");
+          if (identifierParts.length === 3) {
+            const [, typeQuery, actionUuid] = identifierParts;
+            const type = typeQuery.split("=")[1];
+            
+            // @ts-expect-error patched
+            control = window.collection.find((c: any) => {
+              return c.type === type && c.uuidAction === actionUuid;
+            });
+          }
+        }
         if (control) {
           // eslint-disable-next-line prefer-spread
           control._sendCommand.apply(control, passedArgs);
