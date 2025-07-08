@@ -8,6 +8,7 @@ import { LoxoneControlPlatform } from "../platform.js";
 import { sleep } from "./utils/sleep.js";
 
 const __dirname = import.meta.dirname;
+const BROWSER_LOG = false; // set to true to log browser console messages
 
 export type LoxoneComponent = {
   identifier: string;
@@ -54,14 +55,14 @@ export class LoxoneWebinterface {
           // check if chromium path exists
           if (!existsSync(this.platform.config.chromiumPath)) {
             this.platform.logger.error(
-              `Chromium path does not exist: ${this.platform.config.chromiumPath}`
+              `Chromium path does not exist: ${this.platform.config.chromiumPath}`,
             );
             return;
           }
 
           this.platform.logger.debug(
             "Starting new instance of Chromium: " +
-              this.platform.config.chromiumPath
+              this.platform.config.chromiumPath,
           );
           this.browser = await puppeteer.launch({
             executablePath: this.platform.config.chromiumPath,
@@ -75,12 +76,12 @@ export class LoxoneWebinterface {
             args: isRoot ? ["--no-sandbox"] : [],
           });
           this.platform.logger.debug(
-            "Chrome of local package installation started"
+            "Chrome of local package installation started",
           );
         }
       } catch (e) {
         this.platform.logger.error(
-          "Could not start headless browser! See https://github.com/rocket-monkey/homebridge-loxone-control?tab=readme-ov-file#setup"
+          "Could not start headless browser! See https://github.com/rocket-monkey/homebridge-loxone-control?tab=readme-ov-file#setup",
         );
       }
     }
@@ -89,17 +90,42 @@ export class LoxoneWebinterface {
     // mobile viewport for easy navigation
     await this.page?.setViewport({ width: 500, height: 800 });
 
+    // Listen to browser console messages
+    this.page?.on("console", (msg) => {
+      if (!BROWSER_LOG) {
+        return;
+      }
+      const msgType = msg.type();
+      const msgText = msg.text();
+      
+      if (msgType === "error") {
+        this.platform.logger.error(`Browser Console Error: ${msgText}`);
+      } else if (msgType === "warn") {
+        this.platform.logger.error(`Browser Console Warning: ${msgText}`);
+      } else {
+        this.platform.logger.debug(`Browser Console ${msgType}: ${msgText}`);
+      }
+    });
+
+    // Listen to page errors
+    this.page?.on("pageerror", (error) => {
+      if (!BROWSER_LOG) {
+        return;
+      }
+      this.platform.logger.error(`Browser Page Error: ${error.message}`);
+    });
+
     await this.page?.exposeFunction(
       "LoxoneControlPlatformStatus",
       (stateContainer: any) => {
         this.platform.onStatusUpdate(stateContainer);
-      }
+      },
     );
     await this.page?.exposeFunction(
       "LoxoneControlPlatformStatusBefore",
       (newValues: any) => {
         this.platform.onStatusUpdateBefore(newValues);
-      }
+      },
     );
 
     // store in localstorage the loxone config with "ambientOnboardingShown":true
@@ -120,17 +146,17 @@ export class LoxoneWebinterface {
         if (request.url().includes("comps.js?v=15.3.2")) {
           patched = await readFile(
             resolve(__dirname, "scripts/comps.js-v15.3.2.js"),
-            "utf-8"
+            "utf-8",
           );
         } else if (request.url().includes("comps.js?v=15.1.2")) {
           patched = await readFile(
             resolve(__dirname, "scripts/comps.js-v15.1.2.js"),
-            "utf-8"
+            "utf-8",
           );
         } else if (request.url().includes("comps.js?v=15.0.1")) {
           patched = await readFile(
             resolve(__dirname, "scripts/comps.js-v15.0.1.js"),
-            "utf-8"
+            "utf-8",
           );
         } else if (request.url().includes("comps.js?v=14.0.2")) {
           patched = await readFile(
@@ -168,7 +194,7 @@ export class LoxoneWebinterface {
       await this.page.waitForNavigation();
 
       await this.page.waitForFunction(
-        '!document.querySelector("body").innerText.includes("Loading Script ")'
+        "!document.querySelector(\"body\").innerText.includes(\"Loading Script \")",
       );
       await sleep(1000 * 2);
 
@@ -177,7 +203,7 @@ export class LoxoneWebinterface {
 
       this.interval = setInterval(
         this.refreshLogin.bind(this),
-        1000 * 60 * 60 * 24 + randomDelay
+        1000 * 60 * 60 * 24 + randomDelay,
       );
 
       this.preventStandbyInterval = setInterval(async () => {
@@ -187,7 +213,7 @@ export class LoxoneWebinterface {
       }, 1000 * 30);
 
       this.platform.logger.info(
-        "✅ Login successful, loxone web interface ready!"
+        "✅ Login successful, loxone web interface ready!",
       );
 
       await sleep(1000 * 2);
@@ -207,7 +233,7 @@ export class LoxoneWebinterface {
       })) as LoxoneComponent[];
       this.platform.logger.info(
         "🔌 All collected components: ",
-        this.collectedComponents.map((c) => c.identifier)
+        this.collectedComponents.map((c) => c.identifier),
       );
       this.platform.onReady();
     } catch (e: any) {
@@ -239,15 +265,15 @@ export class LoxoneWebinterface {
       await this.page?.waitForNavigation();
 
       await this.page?.waitForFunction(
-        '!document.querySelector("body").innerText.includes("Loading Script ")'
+        "!document.querySelector(\"body\").innerText.includes(\"Loading Script \")",
       );
 
       const timeElapsed = new Date().getTime() - timestamp;
       // log success with time elapsed in seconds
       this.platform.logger.info(
         `Successfully refreshed login in ${Math.floor(
-          timeElapsed / 1000
-        )} seconds!`
+          timeElapsed / 1000,
+        )} seconds!`,
       );
     } catch (e) {
       this.platform.logger.error("Error during login: ", e);

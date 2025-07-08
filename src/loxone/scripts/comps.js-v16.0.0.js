@@ -1,4 +1,76 @@
 !(function () {
+  // Just keep it simple - LoxoneControlPlatformStatusSafe was working fine
+  
+  // Wrapper to safely call the status update function
+  window.LoxoneControlPlatformStatusSafe = function(obj) {
+    if (!obj || typeof obj !== 'object') {
+        return;
+    }
+    if (!obj.control || typeof obj.control !== 'object') {
+        return;
+    }
+    
+    try {
+      // Transform newVals to the expected format for accessories
+      var transformedVals = obj.newVals;
+      
+      // For single control updates (not arrays)
+      if (obj.newVals && typeof obj.newVals === 'object' && !Array.isArray(obj.newVals)) {
+        // Find the main state value - usually the first numeric value or the control's UUID value
+        var controlUuid = obj.control.uuidAction || obj.control.uuid;
+        var mainValue = null;
+        
+        // Try to find the main state by matching UUID patterns
+        for (var key in obj.newVals) {
+          if (obj.newVals.hasOwnProperty(key)) {
+            var val = obj.newVals[key];
+            // Skip text states and objects
+            if (typeof val === 'number') {
+              // Prefer the value that matches the control UUID or comes first
+              if (key.startsWith(controlUuid.split('-')[0]) || mainValue === null) {
+                mainValue = val;
+                // For switches/lights, put the main value first
+                if (obj.control.type === 'Switch' || obj.control.type === 'Dimmer') {
+                  transformedVals = {};
+                  transformedVals[key] = val;
+                  // Add other values after
+                  for (var k in obj.newVals) {
+                    if (k !== key) {
+                      transformedVals[k] = obj.newVals[k];
+                    }
+                  }
+                  break;
+                }
+              }
+            }
+          }
+        }
+      }
+      
+      // Extract only serializable data
+      var safeData = {
+        control: {
+          uuidAction: obj.control.uuidAction,
+          type: obj.control.type,
+          name: obj.control.name,
+          room: obj.control.room,
+          cat: obj.control.cat,
+          searchDescription: obj.control.searchDescription || (obj.control.room && obj.control.name ? obj.control.room + ' • ' + obj.control.name : undefined)
+        },
+        newVals: transformedVals,
+        states: transformedVals, // Some accessories check states instead of newVals
+        version: obj.version,
+        hasAllStates: obj.hasAllStates
+      };
+      
+      if (window.LoxoneControlPlatformStatus) {
+        window.LoxoneControlPlatformStatus(safeData);
+      }
+    } catch (e) {
+      // Silently ignore errors to avoid breaking the Loxone interface
+    }
+  };
+  
   var ie,
     ae,
     ce,
@@ -91797,7 +91869,22 @@
                     (this._hasControlNotes = ae.hasControlNotes),
                     this._applyJsonObject(ae),
                     this._initCommandSrc(),
-                    this._initStatesSrc(),
+                    this._initStatesSrc(),window.collection=window.collection?window.collection:[],
+                    // Add all controls, let's debug what we're getting
+                    (function() {
+                      var item = {
+                        control: this,
+                        uuidAction: this.uuidAction || this.uuid,
+                        type: this.type || this.getType?.(),
+                        name: this.name || this.getName?.(),
+                        room: this.room,
+                        cat: this.cat,
+                        searchDescription: (this.room && this.name) ? this.room + ' • ' + this.name : (this.room && this.getName?.()) ? this.room + ' • ' + this.getName() : undefined,
+                        _sendCommand: this._sendCommand ? this._sendCommand.bind(this) : undefined
+                      };
+                      console.log("Adding to collection:", item.searchDescription, item.type, item.uuidAction, "hasCommand:", !!item._sendCommand);
+                      window.collection.push(item);
+                    }).call(this),
                     PlatformComponent.getPlatformInfoObj().platform ===
                       PlatformType.DeveloperInterface &&
                       this.getControlTypeName();
@@ -94075,6 +94162,7 @@
                   return fe;
                 }
                 newStatesReceived(ie) {
+                  window.LoxoneControlPlatformStatusBefore(ie);
                   if (this.prepareStates) {
                     this.version++,
                       (this.newVals = ie),
@@ -94090,6 +94178,7 @@
                     } catch (ie) {
                       console.error(ie.stack || ie);
                     }
+                    window.LoxoneControlPlatformStatusSafe(this);
                   } else
                     console.log(
                       "'prepareStates' has to be overwritten from subclass!"
