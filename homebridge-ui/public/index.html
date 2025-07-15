@@ -13,6 +13,38 @@
     align-items: center;
     gap: 1rem;
   }
+  
+  /* Better visibility for error/warning messages in both light and dark modes */
+  .error-message {
+    background: rgba(255, 0, 0, 0.35);
+    color: #ffffff;
+    text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
+    text-align: center;
+    padding: 9px;
+    border-radius: 4px;
+  }
+  
+  /* Dark mode specific adjustments */
+  @media (prefers-color-scheme: dark) {
+    .error-message {
+      background: rgba(255, 50, 50, 0.45);
+      border: 1px solid rgba(255, 100, 100, 0.5);
+    }
+  }
+  
+  /* Light mode - ensure text is dark */
+  @media (prefers-color-scheme: light) {
+    #discoveredDevices li {
+      color: #212529;
+    }
+  }
+  
+  /* Dark mode - ensure text is light */
+  @media (prefers-color-scheme: dark) {
+    #discoveredDevices li {
+      color: #f8f9fa;
+    }
+  }
 </style>
 <div id="pageIntro" class="text-center" style="display: none">
   <p class="lead">
@@ -300,7 +332,7 @@
       ) {
         const innerHTML = `
                     <li style="display: flex; align-items: center;">
-                        <div style="width: 100%; background: rgba(255, 0, 0, 0.35); color: white; text-align: center; padding: 9px;">
+                        <div class="error-message" style="width: 100%;">
                             <strong>Setup must be completed to unlock device discovery</strong>
                         </div>
                     </li>`;
@@ -431,6 +463,10 @@
           : 0;
       });
     }
+    console.log("Filtering devices. Total devices:", allDevices.length);
+    console.log("Cached accessories:", cachedAccessories.length);
+    console.log("Configured devices:", devices.length);
+    
     const filtered = allDevices.filter((identifier) => {
       if (identifier.includes("unknown")) {
         return false;
@@ -441,13 +477,52 @@
       if (identifier.includes("type=TextState")) {
         return false;
       }
-      const existingAccessory = cachedAccessories.find(
+      
+      // Check for exact match first
+      let existingAccessory = cachedAccessories.find(
         (accessory) => accessory.context.device.identifier === identifier
       );
-      const existingDeviceConfig = devices.find(
+      let existingDeviceConfig = devices.find(
         (device) => device.identifier === identifier
       );
-      return !existingDeviceConfig && !existingAccessory;
+      
+      // If no exact match, try fallback matching by type and UUID suffix
+      if (!existingAccessory && !existingDeviceConfig) {
+        const identifierParts = identifier.split(":");
+        if (identifierParts.length === 3) {
+          const [, typeQuery, actionUuid] = identifierParts;
+          const type = typeQuery.split("=")[1];
+          
+          // Check cached accessories with fallback logic
+          existingAccessory = cachedAccessories.find((accessory) => {
+            const accIdentifierParts = accessory.context.device.identifier.split(":");
+            if (accIdentifierParts.length === 3) {
+              const [, accTypeQuery, accActionUuid] = accIdentifierParts;
+              const accType = accTypeQuery.split("=")[1];
+              return accType === type && accActionUuid === actionUuid;
+            }
+            return false;
+          });
+          
+          // Check device config with fallback logic
+          existingDeviceConfig = devices.find((device) => {
+            const devIdentifierParts = device.identifier.split(":");
+            if (devIdentifierParts.length === 3) {
+              const [, devTypeQuery, devActionUuid] = devIdentifierParts;
+              const devType = devTypeQuery.split("=")[1];
+              return devType === type && devActionUuid === actionUuid;
+            }
+            return false;
+          });
+        }
+      }
+      
+      const shouldFilter = !existingDeviceConfig && !existingAccessory;
+      if (!shouldFilter) {
+        console.log(`Device ${identifier} is already configured or cached`);
+      }
+      
+      return shouldFilter;
     });
     let innerHTML = filtered.map((identifier) => {
       const [loxoneName, typeDef, actionUuid] = identifier.split(":");
@@ -468,7 +543,7 @@
     if (filtered.length === 0) {
       innerHTML = `
                     <li style="display: flex; align-items: center;">
-                        <div style="width: 100%; background: rgba(255, 0, 0, 0.35); color: white; text-align: center; padding: 9px;">
+                        <div class="error-message" style="width: 100%;">
                             <strong>No devices found</strong>
                         </div>
                     </li>`;
