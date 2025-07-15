@@ -72,7 +72,7 @@ export class PlatformToggleAccessory extends AccessoryBase {
     if (this.identifier.includes("type=CentralJalousie")) {
       // For CentralJalousie, check if ALL blinds have autoActive: true
       if (Array.isArray(this.states)) {
-        const allAutoActive = this.states.every((blind: any) => blind.autoActive === true);
+        const allAutoActive = this.states.every((blind: { autoActive: boolean }) => blind.autoActive === true);
         this.platform.logger.debug(
           `🔄 CentralJalousie ${this.accessory.context.device.name}: ${this.states.length} blinds, all auto active: ${allAutoActive}`,
         );
@@ -100,11 +100,12 @@ export class PlatformToggleAccessory extends AccessoryBase {
     if (this.identifier.includes("type=CentralJalousie")) {
       // For CentralJalousie, calculate the state based on all blinds' autoActive status
       if (Array.isArray(newStates)) {
-        const allAutoActive = newStates.every((blind: any) => blind.autoActive === true);
-        const autoActiveCount = newStates.filter((blind: any) => blind.autoActive === true).length;
+        const allAutoActive = newStates.every((blind: { autoActive: boolean }) => blind.autoActive === true);
+        const autoActiveCount = newStates.filter((blind: { autoActive: boolean }) => blind.autoActive === true).length;
         
         this.platform.logger.debug(
-          `🔄 CentralJalousie ${this.accessory.context.device.name}: ${autoActiveCount}/${newStates.length} blinds in auto mode, setting switch to ${allAutoActive ? "ON" : "OFF"}`,
+          `🔄 CentralJalousie ${this.accessory.context.device.name}: ${autoActiveCount}/${newStates.length} blinds in auto mode, ` +
+          `setting switch to ${allAutoActive ? "ON" : "OFF"}`,
         );
         
         this.service?.updateCharacteristic(
