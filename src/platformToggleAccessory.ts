@@ -49,9 +49,24 @@ export class PlatformToggleAccessory extends AccessoryBase {
       `🔄 CentralJalousie ${name} triggered (value: ${value}) - SETTER CALLED!`,
     );
 
-    // Always send "auto" command to toggle automation, regardless of the requested value
-    this.platform.logger.info(`🔄 CentralJalousie ${name}: Sending auto toggle command`);
-    await sendCommand(this.platform, this.identifier, ["auto"]);
+    // Reset cooldown on all individual blind accessories so they can update immediately
+    this.platform.resetAllBlindAutoCooldowns();
+
+    if (value) {
+      // Turning ON: send auto command to central automation AND all individual blinds
+      this.platform.logger.info(`🔄 CentralJalousie ${name}: Sending auto command to enable automation`);
+      await sendCommand(this.platform, this.identifier, ["auto"]);
+      
+      // Also send auto command to all individual blind accessories
+      await this.platform.sendCommandToAllBlinds(["auto"]);
+    } else {
+      // Turning OFF: send stop command to central automation AND NoAuto to all individual blinds
+      this.platform.logger.info(`🔄 CentralJalousie ${name}: Sending stop command to disable automation`);
+      await sendCommand(this.platform, this.identifier, ["stop"]);
+      
+      // Also send NoAuto command to all individual blind accessories
+      await this.platform.sendCommandToAllBlinds(["NoAuto"]);
+    }
   }
 
   async setOn(value: CharacteristicValue) {
@@ -124,8 +139,15 @@ export class PlatformToggleAccessory extends AccessoryBase {
 
   toggleState = async () => {
     if (this.identifier.includes("type=CentralJalousie")) {
-      // For CentralJalousie, always send "auto" to toggle automation
-      await sendCommand(this.platform, this.identifier, ["auto"]);
+      // For CentralJalousie, check current state and send appropriate command
+      const currentState = await this.getOn();
+      if (currentState) {
+        // Currently ON (automation active): send stop to turn off
+        await sendCommand(this.platform, this.identifier, ["stop"]);
+      } else {
+        // Currently OFF (automation inactive): send auto to turn on
+        await sendCommand(this.platform, this.identifier, ["auto"]);
+      }
     } else {
       // For regular toggles, toggle the state
       const currentState = await this.getOn();
@@ -135,7 +157,7 @@ export class PlatformToggleAccessory extends AccessoryBase {
 
   setStateOn = async () => {
     if (this.identifier.includes("type=CentralJalousie")) {
-      // For CentralJalousie, send "auto" to activate automation if not already active
+      // For CentralJalousie, send "auto" to activate automation
       await sendCommand(this.platform, this.identifier, ["auto"]);
     } else {
       await this.setOn(true);

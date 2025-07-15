@@ -546,4 +546,48 @@ export class LoxoneControlPlatform implements DynamicPlatformPlugin {
       return;
     }
   }
+
+  // Reset cooldown for all blind accessories to allow immediate state updates
+  resetAllBlindAutoCooldowns() {
+    this.instances.forEach((instance) => {
+      if (instance instanceof PlatformWindowCoveringAccessory) {
+        instance.resetAutoSunCooldown();
+      }
+    });
+    this.logger.debug("🔄 Reset auto sun cooldowns for all blind accessories");
+  }
+
+  // Send command to all individual blind accessories
+  async sendCommandToAllBlinds(commands: string[]) {
+    const blindInstances = this.instances.filter(
+      (instance) => instance instanceof PlatformWindowCoveringAccessory,
+    ) as PlatformWindowCoveringAccessory[];
+
+    this.logger.info(`🔄 Sending ${commands[0]} command to ${blindInstances.length} blind accessories`);
+
+    // Update local state immediately for all blinds to reflect the expected change
+    const expectedState = commands[0] === "auto";
+    blindInstances.forEach((blindInstance) => {
+      blindInstance.autoSunPosition = expectedState;
+      blindInstance.autoSunSwitchService?.updateCharacteristic(
+        this.Characteristic.On,
+        expectedState,
+      );
+      // Set cooldown for all blinds to prevent them from being overridden by stale WebSocket responses
+      blindInstance.lastAutoSunCommand = Date.now();
+    });
+
+    // Send commands to all blinds in parallel (without setting individual cooldowns)
+    const commandPromises = blindInstances.map(async (blindInstance) => {
+      try {
+        await sendCommand(this, blindInstance.identifier, commands);
+        this.logger.debug(`🔄 Sent ${commands[0]} to ${blindInstance.accessory.context.device.name}`);
+      } catch (error) {
+        this.logger.error(`🔄 Failed to send ${commands[0]} to ${blindInstance.accessory.context.device.name}:`, error);
+      }
+    });
+
+    await Promise.all(commandPromises);
+    this.logger.info(`🔄 Completed sending ${commands[0]} command to all blinds`);
+  }
 }

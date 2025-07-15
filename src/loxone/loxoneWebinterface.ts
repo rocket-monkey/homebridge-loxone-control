@@ -95,8 +95,22 @@ export class LoxoneWebinterface {
       if (!BROWSER_LOG) {
         return;
       }
+
       const msgType = msg.type();
       const msgText = msg.text();
+      
+      // Always log debug messages and WebSocket commands
+      if (msgText.includes("🔍 AUTOMATION OFF COMMAND") || msgText.includes("🔍 BLIND AUTO COMMAND") || 
+          msgText.includes("🔍") || msgText.includes("CommTracker") || msgText.includes("WebSocket SEND")) {
+        if (msgType === "error") {
+          this.platform.logger.error(`Browser Console Error: ${msgText}`);
+        } else if (msgType === "warn") {
+          this.platform.logger.error(`Browser Console Warning: ${msgText}`);
+        } else {
+          this.platform.logger.info(`Browser Console: ${msgText}`);
+        }
+        return;
+      }
       
       if (msgType === "error") {
         this.platform.logger.error(`Browser Console Error: ${msgText}`);

@@ -11,9 +11,12 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
   private tiltedSwitchService: Service | undefined;
   private openedSwitchService: Service | undefined;
   private shadeSwitchService: Service | undefined;
+  public autoSunSwitchService: Service | undefined;
 
   public tilted = false;
   public opened = false;
+  public autoSunPosition = false;
+  public lastAutoSunCommand = 0; // Timestamp of last command to prevent flickering
 
   constructor(
     public readonly platform: LoxoneControlPlatform,
@@ -120,6 +123,20 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
         .getCharacteristic(this.platform.Characteristic.On)
         .onSet(this.setShadeOn.bind(this))
         .onGet(this.getShadeOn.bind(this));
+
+      // Add an additional service button for "Auto Sun Position" - toggles automation
+      this.autoSunSwitchService =
+        this.accessory.getService(`${device.name} Auto Sun Position`) ||
+        this.accessory.addService(
+          this.platform.Service.Switch,
+          `${device.name} Auto Sun Position`,
+          `${device.room}-${device.name}-${device.type}-autosun`,
+        );
+
+      this.autoSunSwitchService
+        .getCharacteristic(this.platform.Characteristic.On)
+        .onSet(this.setAutoSunOn.bind(this))
+        .onGet(this.getAutoSunOn.bind(this));
     }
 
     this.resetTiltPositions = this.resetTiltPositions.bind(this);
@@ -162,6 +179,37 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
   getShadeOn(): CharacteristicValue {
     // Always return false since this is a momentary button
     return false;
+  }
+
+  async setAutoSunOn(value: CharacteristicValue) {
+    const { name } = this.accessory.context.device;
+    this.platform.logger.info(
+      `☀️ ${name}: Auto Sun Position ${value ? "ON" : "OFF"} - SETTER CALLED!`,
+    );
+
+    // Immediately update local state to prevent flickering
+    this.autoSunPosition = value as boolean;
+    // Only set cooldown for individual user commands, not central automation commands
+    this.lastAutoSunCommand = Date.now();
+
+    if (value) {
+      // Turning ON: send auto command to enable sun position automation
+      this.platform.logger.info(`☀️ ${name}: Sending auto command to enable sun position automation`);
+      await sendCommand(this.platform, this.identifier, ["auto"]);
+    } else {
+      // Turning OFF: send NoAuto command to disable sun position automation
+      this.platform.logger.info(`☀️ ${name}: Sending NoAuto command to disable sun position automation`);
+      await sendCommand(this.platform, this.identifier, ["NoAuto"]);
+    }
+  }
+
+  getAutoSunOn(): CharacteristicValue {
+    return this.autoSunPosition;
+  }
+
+  // Reset cooldown to allow immediate state updates (used when central automation changes all blinds)
+  resetAutoSunCooldown() {
+    this.lastAutoSunCommand = 0;
   }
 
   getCurrentSlatState() {
@@ -349,6 +397,77 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
         })}`,
       );
     }
+    
     this.states = newStates;
+    
+    // Update Auto Sun Position state based on automation text messages
+    const checkAutomationState = (stateObj: Record<string, unknown>): { hasAutomationText: boolean; isActive: boolean } => {
+      // Look for text properties that contain automation status
+      for (const value of Object.values(stateObj)) {
+        if (typeof value === "object" && value !== null && "text" in value) {
+          const text = (value as { text: string }).text;
+          if (text && text.includes("Automatik Beschattung")) {
+            // Check if automation is active (contains "aktiv") or deactivated ("deaktiviert")
+            const isActive = text.includes("aktiv") && !text.includes("deaktiviert");
+            this.platform.logger.debug(
+              `☀️ ${this.accessory.context.device.name}: Automation text: "${text}", interpreted as: ${isActive ? "ACTIVE" : "INACTIVE"}`,
+            );
+            return { hasAutomationText: true, isActive };
+          }
+        }
+      }
+      return { hasAutomationText: false, isActive: false };
+    };
+
+    // Don't update from WebSocket for 1 second after user command to prevent flickering
+    // Only apply this cooldown if this specific blind had a recent user command
+    const timeSinceLastCommand = Date.now() - this.lastAutoSunCommand;
+    if (this.lastAutoSunCommand > 0 && timeSinceLastCommand < 1000) {
+      this.platform.logger.debug(
+        `☀️ ${this.accessory.context.device.name}: Ignoring automation state update for ${1000 - timeSinceLastCommand}ms after user command`,
+      );
+      return;
+    }
+
+    if (Array.isArray(givenValues)) {
+      // For arrays (multiple blind states), check the first one
+      const firstState = givenValues[0];
+      const automationResult = checkAutomationState(firstState);
+      
+      // Only update if we found automation text, otherwise preserve current state
+      if (automationResult.hasAutomationText && this.autoSunPosition !== automationResult.isActive) {
+        this.autoSunPosition = automationResult.isActive;
+        this.autoSunSwitchService?.updateCharacteristic(
+          this.platform.Characteristic.On,
+          this.autoSunPosition,
+        );
+        this.platform.logger.info(
+          `☀️ ${this.accessory.context.device.name}: Auto Sun Position updated to ${this.autoSunPosition ? "ON" : "OFF"}`,
+        );
+      } else if (!automationResult.hasAutomationText) {
+        this.platform.logger.debug(
+          `☀️ ${this.accessory.context.device.name}: No automation text found, preserving current state: ${this.autoSunPosition ? "ON" : "OFF"}`,
+        );
+      }
+    } else if (typeof givenValues === "object" && givenValues !== null) {
+      // For single object states
+      const automationResult = checkAutomationState(givenValues);
+      
+      // Only update if we found automation text, otherwise preserve current state
+      if (automationResult.hasAutomationText && this.autoSunPosition !== automationResult.isActive) {
+        this.autoSunPosition = automationResult.isActive;
+        this.autoSunSwitchService?.updateCharacteristic(
+          this.platform.Characteristic.On,
+          this.autoSunPosition,
+        );
+        this.platform.logger.info(
+          `☀️ ${this.accessory.context.device.name}: Auto Sun Position updated to ${this.autoSunPosition ? "ON" : "OFF"}`,
+        );
+      } else if (!automationResult.hasAutomationText) {
+        this.platform.logger.debug(
+          `☀️ ${this.accessory.context.device.name}: No automation text found, preserving current state: ${this.autoSunPosition ? "ON" : "OFF"}`,
+        );
+      }
+    }
   };
 }
