@@ -37,11 +37,57 @@
     #discoveredDevices li {
       color: #212529;
     }
+    
+    /* General text elements */
+    p, .lead, .small, label, span {
+      color: #212529;
+    }
   }
   
   /* Dark mode - ensure text is light */
   @media (prefers-color-scheme: dark) {
     #discoveredDevices li {
+      color: #f8f9fa;
+    }
+    
+    /* General text elements */
+    p, .lead, .small, label, span {
+      color: #f8f9fa;
+    }
+    
+    /* Form elements */
+    .form-control {
+      background-color: #495057;
+      border-color: #6c757d;
+      color: #f8f9fa;
+    }
+    
+    .form-control:focus {
+      background-color: #495057;
+      border-color: #80bdff;
+      color: #f8f9fa;
+    }
+    
+    /* Card elements */
+    .card {
+      background-color: #495057;
+      border-color: #6c757d;
+    }
+    
+    .card-body {
+      color: #f8f9fa;
+    }
+    
+    /* Button elements */
+    .btn-outline {
+      background-color: transparent;
+      border-color: #6c757d;
+      color: #f8f9fa;
+    }
+    
+    .btn-outline:hover {
+      background-color: #6c757d;
+      border-color: #6c757d;
       color: #f8f9fa;
     }
   }
@@ -95,6 +141,7 @@
         <option value="light">Light</option>
         <option value="temperature">Temperature</option>
         <option value="blinds">Blinds</option>
+        <option value="toggle">Toggle</option>
       </select>
     </div>
     <div class="form-group accessory-light">
@@ -372,6 +419,8 @@
         return "temperature";
       case "Beschattung":
         return "blinds";
+      case "Automatikbeschattung":
+        return "toggle";
       default:
         return "fan";
     }
@@ -655,6 +704,7 @@
         newAccessory = {
           name: document.getElementById("accessoryName").value,
           identifier: document.getElementById("accessoryIdentifier").value,
+          accessoryType: accessoryTypeSelect,
         };
         switch (accessoryTypeSelect) {
           case "fan":
@@ -672,6 +722,9 @@
           case "light":
             newAccessory.lightOutlet =
               document.getElementById("lightOutlet").checked;
+            break;
+          case "toggle":
+            // No additional configuration needed for toggle
             break;
         }
       });
