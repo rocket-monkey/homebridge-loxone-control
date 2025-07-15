@@ -4,11 +4,13 @@ import { AccessoryBase } from "./accessoryBase.js";
 import { BlindsTilt, States } from "./loxone/types.js";
 import { LoxoneControlPlatform } from "./platform.js";
 import { getTiltPositionFromTransforms } from "./loxone/utils/getTiltPositionFromTransforms.js";
+import { sendCommand } from "./loxone/utils/sendCommand.js";
 
 export class PlatformWindowCoveringAccessory extends AccessoryBase {
   private slatService: Service | undefined;
   private tiltedSwitchService: Service | undefined;
   private openedSwitchService: Service | undefined;
+  private shadeSwitchService: Service | undefined;
 
   public tilted = false;
   public opened = false;
@@ -104,6 +106,20 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
         .getCharacteristic(this.platform.Characteristic.On)
         .onSet(this.setOpenedOn.bind(this))
         .onGet(this.getOpenedOn.bind(this));
+
+      // Add an additional service button for "Shade" - stateless command
+      this.shadeSwitchService =
+        this.accessory.getService(`${device.name} Shade`) ||
+        this.accessory.addService(
+          this.platform.Service.Switch,
+          `${device.name} Shade`,
+          `${device.room}-${device.name}-${device.type}-shade`,
+        );
+
+      this.shadeSwitchService
+        .getCharacteristic(this.platform.Characteristic.On)
+        .onSet(this.setShadeOn.bind(this))
+        .onGet(this.getShadeOn.bind(this));
     }
 
     this.resetTiltPositions = this.resetTiltPositions.bind(this);
@@ -124,6 +140,28 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
 
   getOpenedOn(): CharacteristicValue {
     return this.opened;
+  }
+
+  async setShadeOn(value: CharacteristicValue) {
+    if (value) {
+      // Send shade command immediately when turned on
+      const { name } = this.accessory.context.device;
+      this.platform.logger.info(`🌤️ ${name}: Sending shade command`);
+      await sendCommand(this.platform, this.identifier, ["shade"]);
+      
+      // Immediately turn the switch back off since this is a momentary action
+      setTimeout(() => {
+        this.shadeSwitchService?.updateCharacteristic(
+          this.platform.Characteristic.On,
+          false,
+        );
+      }, 100);
+    }
+  }
+
+  getShadeOn(): CharacteristicValue {
+    // Always return false since this is a momentary button
+    return false;
   }
 
   getCurrentSlatState() {

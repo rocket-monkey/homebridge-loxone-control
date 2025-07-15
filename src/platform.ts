@@ -23,6 +23,7 @@ import { PlatformFanAccessory } from "./platformFanAccessory.js";
 import { PlatformLightAccessory } from "./platformLightAccessory.js";
 import { PlatformOutletAccessory } from "./platformOutletAccessory.js";
 import { PlatformTemperatureAccessory } from "./platformTemperatureAccessory.js";
+import { PlatformToggleAccessory } from "./platformToggleAccessory.js";
 import { PlatformWindowCoveringAccessory } from "./platformWindowCoveringAccessory.js";
 import { Logger } from "./logger.js";
 
@@ -311,6 +312,19 @@ export class LoxoneControlPlatform implements DynamicPlatformPlugin {
         await sleep(4000);
         await sendCommand(this, identifier, ["reset"]);
         break;
+      case "Automatikbeschattung":
+        await sendCommand(this, identifier, ["on"]);
+        await sleep(2000);
+        await sendCommand(this, identifier, ["off"]);
+        break;
+      default:
+        // For other categories that might be toggle switches, try a simple on/off
+        if (category.includes("Automatikbeschattung")) {
+          await sendCommand(this, identifier, ["on"]);
+          await sleep(2000);
+          await sendCommand(this, identifier, ["off"]);
+        }
+        break;
     }
   }
 
@@ -324,6 +338,33 @@ export class LoxoneControlPlatform implements DynamicPlatformPlugin {
     this.logger.info(
       `🔨 Create device instance for room: "${room}", category: "${category}", type: "${type}" (${actionUuid})...`,
     );
+    
+    // Check if user explicitly selected an accessory type
+    if (accessory.context.device.accessoryType) {
+      const userType = accessory.context.device.accessoryType;
+      this.logger.info(`🔨 User explicitly selected type: "${userType}"`);
+      
+      switch (userType) {
+        case "fan":
+          return new PlatformFanAccessory(this, accessory, identifier);
+        case "light":
+          if (accessory.context.device.lightOutlet) {
+            return new PlatformOutletAccessory(this, accessory, identifier);
+          }
+          return new PlatformLightAccessory(this, accessory, identifier);
+        case "temperature":
+          return new PlatformTemperatureAccessory(this, accessory, identifier);
+        case "blinds":
+          return new PlatformWindowCoveringAccessory(this, accessory, identifier);
+        case "toggle":
+          return new PlatformToggleAccessory(this, accessory, identifier);
+        default:
+          this.logger.error(`🔨 Unknown user-selected type: "${userType}", falling back to category-based detection`);
+          break;
+      }
+    }
+    
+    // Fall back to category-based detection
     switch (category) {
       case "Klima":
         return new PlatformTemperatureAccessory(this, accessory, identifier);
