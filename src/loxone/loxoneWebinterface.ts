@@ -8,7 +8,8 @@ import { LoxoneControlPlatform } from "../platform.js";
 import { sleep } from "./utils/sleep.js";
 
 const __dirname = import.meta.dirname;
-const BROWSER_LOG = false; // set to true to log browser console messages
+const BROWSER_LOG = true; // set to true to log browser console messages
+const NAVIGATION_TIMEOUT = 60000; // 60 seconds timeout for navigation
 
 export type LoxoneComponent = {
   identifier: string;
@@ -43,54 +44,71 @@ export class LoxoneWebinterface {
   async init() {
     const { serverUrl, user, password } = this.getLoxoneCredentials();
     if (!serverUrl || !user || !password) {
+      this.platform.logger.error("❌ Missing credentials - serverUrl, user or password not configured");
       return;
     }
     this.platform.logger.info("🚀 Initializing loxone web interface..");
-    this.platform.logger.debug(`🔗 Open URL "${serverUrl}" and login...`);
+    this.platform.logger.info(`🔗 Open URL "${serverUrl}" and login...`);
+    this.platform.logger.debug(`🔍 Debug mode enabled, navigation timeout: ${NAVIGATION_TIMEOUT}ms`);
 
     if (!this.browser) {
       try {
         const isRoot = usernameSync() === "root";
+        this.platform.logger.info(`🔍 Starting browser as user: ${usernameSync()}, isRoot: ${isRoot}`);
+        
         if (this.platform.config.chromiumPath) {
           // check if chromium path exists
           if (!existsSync(this.platform.config.chromiumPath)) {
             this.platform.logger.error(
-              `Chromium path does not exist: ${this.platform.config.chromiumPath}`,
+              `❌ Chromium path does not exist: ${this.platform.config.chromiumPath}`,
             );
             return;
           }
 
-          this.platform.logger.debug(
-            "Starting new instance of Chromium: " +
-              this.platform.config.chromiumPath,
+          this.platform.logger.info(
+            `🔍 Starting new instance of Chromium: ${this.platform.config.chromiumPath}`,
           );
+          const launchArgs = isRoot ? ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"] : ["--disable-dev-shm-usage"];
+          this.platform.logger.debug(`🔍 Browser launch args: ${JSON.stringify(launchArgs)}`);
+          
           this.browser = await puppeteer.launch({
             executablePath: this.platform.config.chromiumPath,
             ignoreHTTPSErrors: false,
-            args: isRoot ? ["--no-sandbox"] : [],
+            args: launchArgs,
+            timeout: 30000,
           });
-          this.platform.logger.debug("Chromium started");
+          this.platform.logger.info("✅ Chromium started successfully");
         } else {
+          this.platform.logger.info("🔍 Starting Chrome from local package installation");
+          const launchArgs = isRoot ? ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"] : ["--disable-dev-shm-usage"];
+          this.platform.logger.debug(`🔍 Browser launch args: ${JSON.stringify(launchArgs)}`);
+          
           this.browser = await puppeteer.launch({
             ignoreHTTPSErrors: false,
-            args: isRoot ? ["--no-sandbox"] : [],
+            args: launchArgs,
+            timeout: 30000,
           });
-          this.platform.logger.debug(
-            "Chrome of local package installation started",
-          );
+          this.platform.logger.info("✅ Chrome started successfully");
         }
-      } catch (e) {
+      } catch (e: any) {
         this.platform.logger.error(
-          "Could not start headless browser! See https://github.com/rocket-monkey/homebridge-loxone-control?tab=readme-ov-file#setup",
+          `❌ Could not start headless browser! Error: ${e.message}`,
         );
+        this.platform.logger.error("See https://github.com/rocket-monkey/homebridge-loxone-control?tab=readme-ov-file#setup");
+        return;
       }
     }
+    this.platform.logger.info("🔍 Creating new page...");
     this.page = await this.browser?.newPage();
+    this.platform.logger.info("✅ New page created");
 
     // mobile viewport for easy navigation
+    this.platform.logger.debug("🔍 Setting viewport to 500x800");
     await this.page?.setViewport({ width: 500, height: 800 });
+    this.platform.logger.debug("✅ Viewport set");
 
     // Listen to browser console messages
+    this.platform.logger.debug("🔍 Setting up browser console and error listeners");
     this.page?.on("console", (msg) => {
       if (!BROWSER_LOG) {
         return;
@@ -113,22 +131,33 @@ export class LoxoneWebinterface {
       }
       
       if (msgType === "error") {
-        this.platform.logger.error(`Browser Console Error: ${msgText}`);
+        this.platform.logger.error(`🔍 Browser Console Error: ${msgText}`);
       } else if (msgType === "warn") {
-        this.platform.logger.error(`Browser Console Warning: ${msgText}`);
+        this.platform.logger.error(`🔍 Browser Console Warning: ${msgText}`);
       } else {
-        this.platform.logger.debug(`Browser Console ${msgType}: ${msgText}`);
+        this.platform.logger.debug(`🔍 Browser Console ${msgType}: ${msgText}`);
       }
     });
 
     // Listen to page errors
     this.page?.on("pageerror", (error) => {
-      if (!BROWSER_LOG) {
-        return;
-      }
-      this.platform.logger.error(`Browser Page Error: ${error.message}`);
+      this.platform.logger.error(`🔍 Browser Page Error: ${error.message}`);
+      this.platform.logger.error(`🔍 Error stack: ${error.stack}`);
     });
 
+    // Listen to request failures
+    this.page?.on("requestfailed", (request) => {
+      this.platform.logger.error(`🔍 Request failed: ${request.url()} - ${request.failure()?.errorText}`);
+    });
+
+    // Listen to response errors
+    this.page?.on("response", (response) => {
+      if (response.status() >= 400) {
+        this.platform.logger.error(`🔍 HTTP Error ${response.status()}: ${response.url()}`);
+      }
+    });
+
+    this.platform.logger.debug("🔍 Exposing platform functions to browser context");
     await this.page?.exposeFunction(
       "LoxoneControlPlatformStatus",
       (stateContainer: any) => {
@@ -141,14 +170,18 @@ export class LoxoneWebinterface {
         this.platform.onStatusUpdateBefore(newValues);
       },
     );
+    this.platform.logger.debug("✅ Platform functions exposed");
 
     // store in localstorage the loxone config with "ambientOnboardingShown":true
+    this.platform.logger.debug("🔍 Setting up localStorage configuration");
     await this.page?.evaluateOnNewDocument((settingStr) => {
       localStorage.setItem("LoxSettings.json", settingStr);
       // eslint-disable-next-line max-len
     }, `{"animations":true,"darkMode":true,"tileRepresentation":true,"simpleDesign":false,"miniservers":{"${this.platform.config.loxoneMiniServerId}":{"homeScreen":{"activated":true,"widget":{"building":0,"skyline":0}},"manualFavorites":{"activated":false},"deviceFavorites":{"activated":false},"entryPointLocation":"favorites","presenceRoom":"","instructionFlags":{},"userManagement":{},"sortingDeviceFavorites":{"Mieter":{"activated":false}},"kvStore":{},"ambientOnboardingShown":true}},"instructionFlags":{},"LOCAL_STORAGE":{},"entryPoint":{"activated":true,"entryPointLocation":"favorites"},"SYNC":{"ENABLED":false},"screenSaver":{"activationTime":300,"brightness":10}}`);
+    this.platform.logger.debug("✅ localStorage configuration set");
 
     // Listen for each network request
+    this.platform.logger.debug("🔍 Setting up request interception");
     await this.page?.setRequestInterception(true);
     this.page?.on("request", async (request) => {
       if (request.url().includes("comps.js")) {
@@ -197,19 +230,63 @@ export class LoxoneWebinterface {
 
     try {
       if (!this.page) {
+        this.platform.logger.error("❌ Page not available for login");
         return;
       }
+      
+      const startTime = Date.now();
+      this.platform.logger.info(`🔍 Navigating to: ${serverUrl}`);
+      
       // login to loxone miniserver
-      await this.page.goto(serverUrl);
+      await this.page.goto(serverUrl, { 
+        waitUntil: "networkidle2", 
+        timeout: NAVIGATION_TIMEOUT,
+      });
+      this.platform.logger.info(`✅ Page loaded in ${Date.now() - startTime}ms`);
+      
+      // Take a screenshot for debugging
+      const pageContent = await this.page.content();
+      this.platform.logger.debug(`🔍 Page title: ${await this.page.title()}`);
+      this.platform.logger.debug(`🔍 Page URL: ${this.page.url()}`);
+      this.platform.logger.debug(`🔍 Page content length: ${pageContent.length} characters`);
+      
+      // Check if login form is present
+      const hasLoginForm = await this.page.$("input[type=text]") !== null;
+      const hasPasswordForm = await this.page.$("input[type=password]") !== null;
+      const hasSubmitButton = await this.page.$("button[type=submit]") !== null;
+      
+      this.platform.logger.info(`🔍 Login form elements found - Username: ${hasLoginForm}, Password: ${hasPasswordForm}, Submit: ${hasSubmitButton}`);
+      
+      if (!hasLoginForm || !hasPasswordForm || !hasSubmitButton) {
+        this.platform.logger.error("❌ Login form elements not found on page");
+        return;
+      }
+      
+      this.platform.logger.info("🔍 Typing username...");
       await this.page.type("input[type=text]", user);
+      this.platform.logger.info("🔍 Typing password...");
       await this.page.type("input[type=password]", password);
 
+      this.platform.logger.info("🔍 Clicking submit button...");
       await this.page.click("button[type=submit]");
-      await this.page.waitForNavigation();
+      
+      this.platform.logger.info("🔍 Waiting for navigation...");
+      const navigationStart = Date.now();
+      await this.page.waitForNavigation({ 
+        waitUntil: "networkidle2", 
+        timeout: NAVIGATION_TIMEOUT,
+      });
+      this.platform.logger.info(`✅ Navigation completed in ${Date.now() - navigationStart}ms`);
 
+      this.platform.logger.info("🔍 Waiting for scripts to load...");
+      const scriptLoadStart = Date.now();
       await this.page.waitForFunction(
         "!document.querySelector(\"body\").innerText.includes(\"Loading Script \")",
+        { timeout: NAVIGATION_TIMEOUT },
       );
+      this.platform.logger.info(`✅ Scripts loaded in ${Date.now() - scriptLoadStart}ms`);
+      
+      this.platform.logger.info("🔍 Waiting additional 2 seconds for stability...");
       await sleep(1000 * 2);
 
       // random number between 0 and 60 seconds
@@ -251,8 +328,37 @@ export class LoxoneWebinterface {
       );
       this.platform.onReady();
     } catch (e: any) {
-      this.platform.logger.error("Error during login!");
-      this.platform.logger.error(e.message);
+      this.platform.logger.error("❌ Error during login!");
+      this.platform.logger.error(`🔍 Error type: ${e.constructor.name}`);
+      this.platform.logger.error(`🔍 Error message: ${e.message}`);
+      
+      if (e.message?.includes("Navigation timeout")) {
+        this.platform.logger.error("🔍 Navigation timeout detected - this usually indicates:");
+        this.platform.logger.error("  • Network connectivity issues");
+        this.platform.logger.error("  • Slow server response");
+        this.platform.logger.error("  • Incorrect server URL");
+        this.platform.logger.error("  • Firewall/proxy blocking the connection");
+      }
+      
+      if (e.message?.includes("net::ERR_")) {
+        this.platform.logger.error("🔍 Network error detected - check connectivity to Loxone server");
+      }
+      
+      if (e.stack) {
+        this.platform.logger.error(`🔍 Error stack: ${e.stack}`);
+      }
+      
+      // Try to get page information if available
+      if (this.page) {
+        try {
+          const currentUrl = this.page.url();
+          const pageTitle = await this.page.title();
+          this.platform.logger.error(`🔍 Current page URL: ${currentUrl}`);
+          this.platform.logger.error(`🔍 Current page title: ${pageTitle}`);
+        } catch (pageError) {
+          this.platform.logger.error(`🔍 Could not get page info: ${pageError}`);
+        }
+      }
     }
   }
 
@@ -271,26 +377,44 @@ export class LoxoneWebinterface {
 
     try {
       // login to loxone miniserver
-      await this.page?.goto(serverUrl);
+      this.platform.logger.debug(`🔍 Refresh login - navigating to: ${serverUrl}`);
+      await this.page?.goto(serverUrl, { 
+        waitUntil: "networkidle2", 
+        timeout: NAVIGATION_TIMEOUT,
+      });
+      
+      this.platform.logger.debug("🔍 Refresh login - typing credentials");
       await this.page?.type("input[type=text]", user);
       await this.page?.type("input[type=password]", password);
 
       await this.page?.click("button[type=submit]");
-      await this.page?.waitForNavigation();
+      
+      this.platform.logger.debug("🔍 Refresh login - waiting for navigation");
+      await this.page?.waitForNavigation({ 
+        waitUntil: "networkidle2", 
+        timeout: NAVIGATION_TIMEOUT,
+      });
 
+      this.platform.logger.debug("🔍 Refresh login - waiting for scripts to load");
       await this.page?.waitForFunction(
         "!document.querySelector(\"body\").innerText.includes(\"Loading Script \")",
+        { timeout: NAVIGATION_TIMEOUT },
       );
 
       const timeElapsed = new Date().getTime() - timestamp;
       // log success with time elapsed in seconds
       this.platform.logger.info(
-        `Successfully refreshed login in ${Math.floor(
+        `✅ Successfully refreshed login in ${Math.floor(
           timeElapsed / 1000,
         )} seconds!`,
       );
-    } catch (e) {
-      this.platform.logger.error("Error during login: ", e);
+    } catch (e: any) {
+      this.platform.logger.error("❌ Error during refresh login!");
+      this.platform.logger.error(`🔍 Error message: ${e.message}`);
+      
+      if (e.message?.includes("Navigation timeout")) {
+        this.platform.logger.error("🔍 Navigation timeout during refresh - server may be slow or unresponsive");
+      }
     }
   }
 
