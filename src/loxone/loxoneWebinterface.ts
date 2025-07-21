@@ -9,7 +9,7 @@ import { sleep } from "./utils/sleep.js";
 
 const __dirname = import.meta.dirname;
 const BROWSER_LOG = false; // set to true to log browser console messages
-const DEBUG_MODE = true; // set to true for verbose debugging
+const DEBUG_MODE = false; // set to true for verbose debugging
 const NAVIGATION_TIMEOUT = 60000; // 60 seconds timeout for navigation
 
 export type LoxoneComponent = {
@@ -168,6 +168,9 @@ export class LoxoneWebinterface {
 
     // Listen to page errors
     this.page?.on("pageerror", (error) => {
+      if (!BROWSER_LOG) {
+        return;
+      }
       this.platform.logger.error(`🔍 Browser Page Error: ${error.message}`);
       this.platform.logger.error(`🔍 Error stack: ${error.stack}`);
     });
