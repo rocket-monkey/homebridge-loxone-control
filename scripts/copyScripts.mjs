@@ -2,9 +2,9 @@
 /* eslint-disable no-console */
 import { join } from "path";
 import { mkdir, readdir, copyFile } from "fs/promises";
-import { URL } from "url";
+import { fileURLToPath } from "url";
 
-const __dirname = new URL(".", import.meta.url).pathname;
+const __dirname = fileURLToPath(new URL(".", import.meta.url));
 
 const copyScripts = async () => {
   const src = join(__dirname, "../src/loxone/scripts");
