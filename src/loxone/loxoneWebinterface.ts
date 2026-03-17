@@ -82,7 +82,7 @@ export class LoxoneWebinterface {
           
           this.browser = await puppeteer.launch({
             executablePath: this.platform.config.chromiumPath,
-            ignoreHTTPSErrors: false,
+            ignoreHTTPSErrors: true,
             args: launchArgs,
             timeout: 30000,
           });
@@ -99,7 +99,7 @@ export class LoxoneWebinterface {
           }
           
           this.browser = await puppeteer.launch({
-            ignoreHTTPSErrors: false,
+            ignoreHTTPSErrors: true,
             args: launchArgs,
             timeout: 30000,
           });

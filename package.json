@@ -2,7 +2,7 @@
   "displayName": "Homebridge Loxone Control",
   "name": "homebridge-loxone-control",
   "type": "module",
-  "version": "1.5.5",
+  "version": "1.5.6",
   "description": "Homebridge plugin to control a loxone system trough the web-interface - useful if you have zero access to the Miniserver",
   "author": "Remo Vetere <remo.vetere@gmail.com>",
   "license": "Apache-2.0",
@@ -20,7 +20,7 @@
   ],
   "main": "dist/index.js",
   "engines": {
-    "node": "^18.20.4 || ^20.12.2 || ^20.18.0 || ^22.10.0",
+    "node": "^18.20.4 || ^20.12.2 || ^20.18.0 || ^22.10.0 || ^24.0.0",
     "homebridge": "^1.8.0 || ^2.0.0-beta.0"
   },
   "scripts": {
@@ -29,7 +29,13 @@
     "watch": "npm run build && npm link && nodemon",
     "build": "rimraf ./dist && tsc",
     "postbuild": "node scripts/copyScripts.mjs",
-    "prepublishOnly": "npm run lint && npm run build"
+    "prepublishOnly": "npm run lint && npm run build",
+    "docker:build": "docker build -t homebridge-loxone .",
+    "docker:run": "docker run --rm --name homebridge-loxone -p 8581:8581 -p 51827:51827 --shm-size=1g -v homebridge-loxone-data:/homebridge homebridge-loxone",
+    "docker:start": "npm run docker:build && npm run docker:run",
+    "docker:stop": "docker stop homebridge-loxone",
+    "docker:logs": "docker logs -f homebridge-loxone",
+    "docker:shell": "docker exec -it homebridge-loxone bash"
   },
   "devDependencies": {
     "@eslint/js": "^9.20.0",
@@ -46,7 +52,7 @@
   "dependencies": {
     "@homebridge/plugin-ui-utils": "2.0.1",
     "homebridge-lib": "^7.1.4",
-    "puppeteer": "22.6.4",
+    "puppeteer": "^22.15.0",
     "username": "7.0.0"
   }
 }
