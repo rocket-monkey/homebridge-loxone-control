@@ -231,8 +231,8 @@ export class LoxoneControlPlatform implements DynamicPlatformPlugin {
 
         this.handleRequest(req, res);
       });
-      this.requestServer.listen(18081, () =>
-        this.logger.info("Http server listening on 18081..."),
+      this.requestServer.listen(18081, "0.0.0.0", () =>
+        this.logger.info("Http server listening on 0.0.0.0:18081..."),
       );
     } catch (e) {
       this.logger.error("Could not start http server!");

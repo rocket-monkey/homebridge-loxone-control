@@ -10,7 +10,7 @@ import { sleep } from "./utils/sleep.js";
 const __dirname = import.meta.dirname;
 const BROWSER_LOG = false; // set to true to log browser console messages
 const DEBUG_MODE = false; // set to true for verbose debugging
-const NAVIGATION_TIMEOUT = 60000; // 60 seconds timeout for navigation
+const NAVIGATION_TIMEOUT = 180000; // 180 seconds timeout for navigation (Loxone loads 14-16MB JS files)
 
 export type LoxoneComponent = {
   identifier: string;
@@ -75,16 +75,19 @@ export class LoxoneWebinterface {
               `🔍 Starting new instance of Chromium: ${this.platform.config.chromiumPath}`,
             );
           }
-          const launchArgs = isRoot ? ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"] : ["--disable-dev-shm-usage"];
+          const launchArgs = isRoot
+            ? ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
+            : ["--disable-dev-shm-usage"];
           if (DEBUG_MODE) {
             this.platform.logger.debug(`🔍 Browser launch args: ${JSON.stringify(launchArgs)}`);
           }
-          
+
           this.browser = await puppeteer.launch({
             executablePath: this.platform.config.chromiumPath,
-            ignoreHTTPSErrors: true,
+            acceptInsecureCerts: true,
             args: launchArgs,
             timeout: 30000,
+            protocolTimeout: 300000,
           });
           if (DEBUG_MODE) {
             this.platform.logger.info("✅ Chromium started successfully");
@@ -93,15 +96,18 @@ export class LoxoneWebinterface {
           if (DEBUG_MODE) {
             this.platform.logger.info("🔍 Starting Chrome from local package installation");
           }
-          const launchArgs = isRoot ? ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"] : ["--disable-dev-shm-usage"];
+          const launchArgs = isRoot
+            ? ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
+            : ["--disable-dev-shm-usage"];
           if (DEBUG_MODE) {
             this.platform.logger.debug(`🔍 Browser launch args: ${JSON.stringify(launchArgs)}`);
           }
-          
+
           this.browser = await puppeteer.launch({
-            ignoreHTTPSErrors: true,
+            acceptInsecureCerts: true,
             args: launchArgs,
             timeout: 30000,
+            protocolTimeout: 300000,
           });
           if (DEBUG_MODE) {
             this.platform.logger.info("✅ Chrome started successfully");
@@ -140,23 +146,8 @@ export class LoxoneWebinterface {
       if (!BROWSER_LOG) {
         return;
       }
-
       const msgType = msg.type();
       const msgText = msg.text();
-      
-      // Always log debug messages and WebSocket commands
-      if (msgText.includes("🔍 AUTOMATION OFF COMMAND") || msgText.includes("🔍 BLIND AUTO COMMAND") || 
-          msgText.includes("🔍") || msgText.includes("CommTracker") || msgText.includes("WebSocket SEND")) {
-        if (msgType === "error") {
-          this.platform.logger.error(`Browser Console Error: ${msgText}`);
-        } else if (msgType === "warn") {
-          this.platform.logger.error(`Browser Console Warning: ${msgText}`);
-        } else {
-          this.platform.logger.info(`Browser Console: ${msgText}`);
-        }
-        return;
-      }
-      
       if (msgType === "error") {
         this.platform.logger.error(`🔍 Browser Console Error: ${msgText}`);
       } else if (msgType === "warn") {
@@ -167,12 +158,13 @@ export class LoxoneWebinterface {
     });
 
     // Listen to page errors
-    this.page?.on("pageerror", (error) => {
+    this.page?.on("pageerror", (error: unknown) => {
       if (!BROWSER_LOG) {
         return;
       }
-      this.platform.logger.error(`🔍 Browser Page Error: ${error.message}`);
-      this.platform.logger.error(`🔍 Error stack: ${error.stack}`);
+      const err = error as Error;
+      this.platform.logger.error(`🔍 Browser Page Error: ${err.message}`);
+      this.platform.logger.error(`🔍 Error stack: ${err.stack}`);
     });
 
     // Listen to request failures
@@ -180,6 +172,7 @@ export class LoxoneWebinterface {
       this.platform.logger.error(`🔍 Request failed: ${request.url()} - ${request.failure()?.errorText}`);
     });
 
+    // Listen to all responses for debugging
     // Listen to response errors
     this.page?.on("response", (response) => {
       if (response.status() >= 400) {
@@ -224,10 +217,12 @@ export class LoxoneWebinterface {
     }
     await this.page?.setRequestInterception(true);
     this.page?.on("request", async (request) => {
-      if (request.url().includes("comps.js")) {
+      const url = request.url();
+      if (url.includes("comps.js")) {
         if (DEBUG_MODE) {
           this.platform.logger.info(`🔍 Intercepting comps.js request: ${request.url()}`);
         }
+
         // search for "this._initStatesSrc()," and change to
         // "this._initStatesSrc(),window.collection=window.collection?window.collection:[],window.collection.push(this),"
         // then, search for "newStatesReceived" and add at the beginning of the function 
@@ -236,31 +231,31 @@ export class LoxoneWebinterface {
         let patched = "";
         let version = "unknown";
         
-        if (request.url().includes("comps.js?v=15.3.2")) {
+        if (request.url().includes("comps.js?v=15.3")) {
           version = "15.3.2";
           patched = await readFile(
             resolve(__dirname, "scripts/comps.js-v15.3.2.js"),
             "utf-8",
           );
-        } else if (request.url().includes("comps.js?v=15.1.2")) {
+        } else if (request.url().includes("comps.js?v=15.1")) {
           version = "15.1.2";
           patched = await readFile(
             resolve(__dirname, "scripts/comps.js-v15.1.2.js"),
             "utf-8",
           );
-        } else if (request.url().includes("comps.js?v=15.0.1")) {
+        } else if (request.url().includes("comps.js?v=15.0")) {
           version = "15.0.1";
           patched = await readFile(
             resolve(__dirname, "scripts/comps.js-v15.0.1.js"),
             "utf-8",
           );
-        } else if (request.url().includes("comps.js?v=14.0.2")) {
+        } else if (request.url().includes("comps.js?v=14.0")) {
           version = "14.0.2";
           patched = await readFile(
             resolve(__dirname, "scripts/comps.js-v14.0.2.js"),
             "utf-8",
           );
-        } else if (request.url().includes("comps.js?v=16.0.0")) {
+        } else if (request.url().includes("comps.js?v=16.0")) {
           version = "16.0.0";
           patched = await readFile(
             resolve(__dirname, "scripts/comps.js-v16.0.0.js"),
@@ -274,7 +269,7 @@ export class LoxoneWebinterface {
         }
 
         if (DEBUG_MODE) {
-          this.platform.logger.info(`✅ Using patched script for Loxone version ${version}, script size: ${patched.length} bytes`);
+          this.platform.logger.info(`✅ Using patched comps.js for Loxone v${version} (${patched.length} bytes)`);
         }
         
         // Respond with the modified script
@@ -285,7 +280,7 @@ export class LoxoneWebinterface {
             body: patched,
           });
           if (DEBUG_MODE) {
-            this.platform.logger.info(`✅ Successfully responded with patched script for version ${version}`);
+            this.platform.logger.info(`✅ Patched comps.js served to browser`);
           }
         } catch (error: any) {
           this.platform.logger.error(`❌ Error responding with patched script: ${error.message}`);
@@ -308,65 +303,49 @@ export class LoxoneWebinterface {
       }
       
       // login to loxone miniserver
-      await this.page.goto(serverUrl, { 
-        waitUntil: "networkidle2", 
-        timeout: NAVIGATION_TIMEOUT,
+      this.platform.logger.info("🔍 Navigating to Loxone web interface...");
+      // Don't await goto — just fire and wait for the login form
+      this.page.goto(serverUrl).catch((e: any) => {
+        this.platform.logger.info(`🔍 goto catch: ${e.message}`);
       });
-      if (DEBUG_MODE) {
-        this.platform.logger.info(`✅ Page loaded in ${Date.now() - startTime}ms`);
-        
-        // Take a screenshot for debugging
-        const pageContent = await this.page.content();
-        this.platform.logger.debug(`🔍 Page title: ${await this.page.title()}`);
-        this.platform.logger.debug(`🔍 Page URL: ${this.page.url()}`);
-        this.platform.logger.debug(`🔍 Page content length: ${pageContent.length} characters`);
+
+      // Wait for the login form — use waitForSelector which listens via CDP
+      // without needing JS execution on the main thread
+      this.platform.logger.info("🔍 Waiting for login form...");
+      try {
+        await this.page.waitForSelector("input[type=text]", { timeout: NAVIGATION_TIMEOUT });
+      } catch {
+        this.platform.logger.error("❌ Login form never appeared - retrying with extended timeout...");
+        // Try once more with a longer timeout — the huge comps.js can take very long
+        await this.page.waitForSelector("input[type=text]", { timeout: 300000 });
       }
-      
-      // Check if login form is present
-      const hasLoginForm = await this.page.$("input[type=text]") !== null;
-      const hasPasswordForm = await this.page.$("input[type=password]") !== null;
-      const hasSubmitButton = await this.page.$("button[type=submit]") !== null;
-      
-      if (DEBUG_MODE) {
-        this.platform.logger.info(`🔍 Login form elements found - Username: ${hasLoginForm}, Password: ${hasPasswordForm}, Submit: ${hasSubmitButton}`);
-      }
-      
-      if (!hasLoginForm || !hasPasswordForm || !hasSubmitButton) {
-        this.platform.logger.error("❌ Login form elements not found on page");
-        return;
-      }
-      
-      if (DEBUG_MODE) {
-        this.platform.logger.info("🔍 Typing credentials and submitting...");
-      }
+      this.platform.logger.info(`✅ Login form appeared in ${Date.now() - startTime}ms`);
+
+      // Wait for JS framework to fully initialize event handlers
+      this.platform.logger.info("🔍 Waiting for page JS to initialize...");
+      await sleep(5000);
+
+      // Use the same approach as v1.5.5: page.type + page.click
+      this.platform.logger.info("🔍 Typing credentials...");
       await this.page.type("input[type=text]", user);
       await this.page.type("input[type=password]", password);
-      await this.page.click("button[type=submit]");
-      
-      if (DEBUG_MODE) {
-        this.platform.logger.info("🔍 Waiting for navigation...");
-      }
-      const navigationStart = Date.now();
-      await this.page.waitForNavigation({ 
-        waitUntil: "networkidle2", 
-        timeout: NAVIGATION_TIMEOUT,
-      });
-      if (DEBUG_MODE) {
-        this.platform.logger.info(`✅ Navigation completed in ${Date.now() - navigationStart}ms`);
-      }
 
-      if (DEBUG_MODE) {
-        this.platform.logger.info("🔍 Waiting for scripts to load...");
-      }
-      const scriptLoadStart = Date.now();
-      await this.page.waitForFunction(
-        "!document.querySelector(\"body\").innerText.includes(\"Loading Script \")",
-        { timeout: NAVIGATION_TIMEOUT },
-      );
-      if (DEBUG_MODE) {
-        this.platform.logger.info(`✅ Scripts loaded in ${Date.now() - scriptLoadStart}ms`);
-        this.platform.logger.info("🔍 Waiting additional 2 seconds for stability...");
-      }
+      const usernameVal = await this.page.$eval("input[type=text]", (el: any) => el.value);
+      const passwordVal = await this.page.$eval("input[type=password]", (el: any) => el.value);
+      this.platform.logger.info(`🔍 Field values - username: "${usernameVal}" (${usernameVal.length}), password: ${passwordVal.length} chars`);
+
+      this.platform.logger.info("🔍 Submitting login...");
+      const navigationStart = Date.now();
+      await this.page.click("button[type=submit]");
+
+      // After login, the Loxone web app loads the massive comps.js (14-16MB)
+      // which blocks Chrome's main thread. We can't use waitForFunction/evaluate
+      // during this time. Instead, wait for the intercepted comps.js to be served
+      // and give Chrome time to parse it.
+      // Wait for the post-login page to load (comps.js parsing takes time)
+      this.platform.logger.info("🔍 Waiting for Loxone web interface to load...");
+      await sleep(1000 * 30);
+      this.platform.logger.info(`✅ Login flow completed in ${Date.now() - navigationStart}ms`);
       await sleep(1000 * 2);
 
       // random number between 0 and 60 seconds
@@ -387,15 +366,28 @@ export class LoxoneWebinterface {
         "✅ Login successful, loxone web interface ready!",
       );
 
-      await sleep(1000 * 2);
-      const allCollectedComponents = await this.page?.evaluate(() => {
+      // Wait for the patched comps.js to initialize window.collection
+      this.platform.logger.info("🔍 Waiting for device collection to be available...");
+      let allCollectedComponents: any;
+      for (let i = 0; i < 30; i++) {
+        await sleep(1000 * 5);
         try {
-          // @ts-expect-error patched
-          return window.collection;
-        } catch (e) {
-          return e;
+          allCollectedComponents = await this.page?.evaluate(() => {
+            // @ts-expect-error patched
+            return window.collection;
+          });
+          if (allCollectedComponents && allCollectedComponents.length > 0) {
+            this.platform.logger.info(`✅ Collection ready with ${allCollectedComponents.length} components after ${(i + 1) * 5}s`);
+            break;
+          }
+        } catch {
+          // JS context may still be busy — keep trying
         }
-      });
+      }
+      if (!allCollectedComponents || allCollectedComponents.length === 0) {
+        this.platform.logger.error("❌ No components collected after 150s");
+        return;
+      }
       this.collectedComponents = allCollectedComponents.map((c: any) => ({
         ...c,
         identifier: `${c.searchDescription || "unknown • unknown"}:type=${
@@ -460,26 +452,19 @@ export class LoxoneWebinterface {
       if (DEBUG_MODE) {
         this.platform.logger.debug(`🔍 Refresh login - navigating to: ${serverUrl}`);
       }
-      await this.page?.goto(serverUrl, { 
-        waitUntil: "networkidle2", 
-        timeout: NAVIGATION_TIMEOUT,
-      });
-      
+      this.page?.goto(serverUrl).catch(() => { /* navigation may be interrupted */ });
+      await this.page?.waitForSelector("input[type=text]", { timeout: NAVIGATION_TIMEOUT });
+
       if (DEBUG_MODE) {
         this.platform.logger.debug("🔍 Refresh login - typing credentials");
       }
       await this.page?.type("input[type=text]", user);
       await this.page?.type("input[type=password]", password);
 
-      await this.page?.click("button[type=submit]");
-      
-      if (DEBUG_MODE) {
-        this.platform.logger.debug("🔍 Refresh login - waiting for navigation");
-      }
-      await this.page?.waitForNavigation({ 
-        waitUntil: "networkidle2", 
-        timeout: NAVIGATION_TIMEOUT,
-      });
+      await Promise.all([
+        this.page?.click("button[type=submit]"),
+        this.page?.waitForSelector("input[type=text]", { hidden: true, timeout: NAVIGATION_TIMEOUT }),
+      ]);
 
       if (DEBUG_MODE) {
         this.platform.logger.debug("🔍 Refresh login - waiting for scripts to load");

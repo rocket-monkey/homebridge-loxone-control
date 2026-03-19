@@ -37,16 +37,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     xdg-utils \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy and build the plugin
-WORKDIR /tmp/plugin
-COPY package*.json ./
-RUN npm ci
-COPY . .
-RUN npm run build
-
-# Install the plugin globally so Homebridge discovers it
-# Puppeteer's postinstall downloads the matching Chrome version
+# Download Chrome for Puppeteer
 ENV PUPPETEER_CACHE_DIR=/root/.cache/puppeteer
-RUN npm install -g /tmp/plugin && rm -rf /tmp/plugin
+RUN npx -y puppeteer browsers install chrome
+
+# Append plugin install to the default startup script
+# This runs after Homebridge setup completes, so /var/lib/homebridge exists
+RUN printf '\n# Auto-install homebridge-loxone-control plugin\nif [ ! -d "/var/lib/homebridge/node_modules/homebridge-loxone-control" ]; then\n  echo "Installing homebridge-loxone-control plugin..."\n  cd /var/lib/homebridge && npm install --save homebridge-loxone-control@1.6.1\nfi\n' >> /defaults/startup.sh
 
 WORKDIR /homebridge
