@@ -11,6 +11,8 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
   private tiltedSwitchService: Service | undefined;
   private openedSwitchService: Service | undefined;
   private shadeSwitchService: Service | undefined;
+  private fullyInSwitchService: Service | undefined;
+  private fullyOutSwitchService: Service | undefined;
   public autoSunSwitchService: Service | undefined;
 
   public tilted = false;
@@ -59,11 +61,10 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
       .onGet(this.getTargetPosition.bind(this))
       .onSet(this.setTargetPosition.bind(this));
 
-    const isAwning =
-      this.accessory.context.device.blindsTiming?.includes("awning");
+    const { device } = accessory.context;
+    const isAwning = device.blindsTiming?.includes("awning");
     if (!isAwning) {
       // Add an additional service for "Slats" characteristics
-      const { device } = accessory.context;
       this.slatService =
         this.accessory.getService(`${device.name} Slats`) ||
         this.accessory.addService(
@@ -110,33 +111,64 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
         .onSet(this.setOpenedOn.bind(this))
         .onGet(this.getOpenedOn.bind(this));
 
-      // Add an additional service button for "Shade" - stateless command
-      this.shadeSwitchService =
-        this.accessory.getService(`${device.name} Shade`) ||
+    }
+
+    // Shade and Auto Sun Position are available for ALL window coverings (including awnings)
+    // Add an additional service button for "Shade" - stateless command
+    this.shadeSwitchService =
+      this.accessory.getService(`${device.name} Shade`) ||
+      this.accessory.addService(
+        this.platform.Service.Switch,
+        `${device.name} Shade`,
+        `${device.room}-${device.name}-${device.type}-shade`,
+      );
+
+    this.shadeSwitchService
+      .getCharacteristic(this.platform.Characteristic.On)
+      .onSet(this.setShadeOn.bind(this))
+      .onGet(this.getShadeOn.bind(this));
+
+    // Add an additional service button for "Auto Sun Position" - toggles automation
+    this.autoSunSwitchService =
+      this.accessory.getService(`${device.name} Auto Sun Position`) ||
+      this.accessory.addService(
+        this.platform.Service.Switch,
+        `${device.name} Auto Sun Position`,
+        `${device.room}-${device.name}-${device.type}-autosun`,
+      );
+
+    this.autoSunSwitchService
+      .getCharacteristic(this.platform.Characteristic.On)
+      .onSet(this.setAutoSunOn.bind(this))
+      .onGet(this.getAutoSunOn.bind(this));
+
+    // Awnings get "Fully In" and "Fully Out" buttons (retract/extend)
+    if (isAwning) {
+      this.fullyInSwitchService =
+        this.accessory.getService(`${device.name} Fully In`) ||
         this.accessory.addService(
           this.platform.Service.Switch,
-          `${device.name} Shade`,
-          `${device.room}-${device.name}-${device.type}-shade`,
+          `${device.name} Fully In`,
+          `${device.room}-${device.name}-${device.type}-fullyin`,
         );
 
-      this.shadeSwitchService
+      this.fullyInSwitchService
         .getCharacteristic(this.platform.Characteristic.On)
-        .onSet(this.setShadeOn.bind(this))
-        .onGet(this.getShadeOn.bind(this));
+        .onSet(this.setFullyInOn.bind(this))
+        .onGet(() => false);
 
-      // Add an additional service button for "Auto Sun Position" - toggles automation
-      this.autoSunSwitchService =
-        this.accessory.getService(`${device.name} Auto Sun Position`) ||
+      this.fullyOutSwitchService =
+        this.accessory.getService(`${device.name} Fully Out`) ||
         this.accessory.addService(
           this.platform.Service.Switch,
-          `${device.name} Auto Sun Position`,
-          `${device.room}-${device.name}-${device.type}-autosun`,
+          `${device.name} Fully Out`,
+          `${device.room}-${device.name}-${device.type}-fullyout`,
         );
 
-      this.autoSunSwitchService
+      this.fullyOutSwitchService
         .getCharacteristic(this.platform.Characteristic.On)
-        .onSet(this.setAutoSunOn.bind(this))
-        .onGet(this.getAutoSunOn.bind(this));
+        .onSet(this.setFullyOutOn.bind(this))
+        .onGet(() => false);
     }
 
     this.resetTiltPositions = this.resetTiltPositions.bind(this);
@@ -179,6 +211,34 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
   getShadeOn(): CharacteristicValue {
     // Always return false since this is a momentary button
     return false;
+  }
+
+  async setFullyInOn(value: CharacteristicValue) {
+    if (value) {
+      const { name } = this.accessory.context.device;
+      this.platform.logger.info(`⬆️ ${name}: Sending Fully In (retract) command`);
+      await sendCommand(this.platform, this.identifier, ["FullUp"]);
+      setTimeout(() => {
+        this.fullyInSwitchService?.updateCharacteristic(
+          this.platform.Characteristic.On,
+          false,
+        );
+      }, 100);
+    }
+  }
+
+  async setFullyOutOn(value: CharacteristicValue) {
+    if (value) {
+      const { name } = this.accessory.context.device;
+      this.platform.logger.info(`⬇️ ${name}: Sending Fully Out (extend) command`);
+      await sendCommand(this.platform, this.identifier, ["FullDown"]);
+      setTimeout(() => {
+        this.fullyOutSwitchService?.updateCharacteristic(
+          this.platform.Characteristic.On,
+          false,
+        );
+      }, 100);
+    }
   }
 
   async setAutoSunOn(value: CharacteristicValue) {
