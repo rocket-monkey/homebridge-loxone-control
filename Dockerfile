@@ -43,6 +43,6 @@ RUN npx -y puppeteer browsers install chrome
 
 # Append plugin install to the default startup script
 # This runs after Homebridge setup completes, so /var/lib/homebridge exists
-RUN printf '\n# Auto-install homebridge-loxone-control plugin\nif [ ! -d "/var/lib/homebridge/node_modules/homebridge-loxone-control" ]; then\n  echo "Installing homebridge-loxone-control plugin..."\n  cd /var/lib/homebridge && npm install --save homebridge-loxone-control@1.6.1\nfi\n' >> /defaults/startup.sh
+RUN printf '\n# Auto-install homebridge-loxone-control plugin\nif [ ! -d "/var/lib/homebridge/node_modules/homebridge-loxone-control" ]; then\n  echo "Installing homebridge-loxone-control plugin..."\n  cd /var/lib/homebridge && npm install --save homebridge-loxone-control@latest\nfi\n' >> /defaults/startup.sh
 
 WORKDIR /homebridge
