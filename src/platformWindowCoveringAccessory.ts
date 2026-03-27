@@ -273,7 +273,9 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
   }
 
   getCurrentSlatState() {
-    return this.platform.Characteristic.CurrentSlatState.FIXED;
+    return this.states.TiltPosition === "closed"
+      ? this.platform.Characteristic.CurrentSlatState.FIXED
+      : this.platform.Characteristic.CurrentSlatState.SWINGING;
   }
 
   getSlatType() {
@@ -441,6 +443,26 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
         newStates.TargetPosition,
       );
     }
+
+    // Update slat tilt angle and state when tilt position changes
+    if (this.slatService && this.states.TiltPosition !== newStates.TiltPosition) {
+      anyStateChanged = true;
+      const tiltAngle = newStates.TiltPosition === "tilted" ? 45
+        : newStates.TiltPosition === "open" ? 90 : 0;
+      const slatState = newStates.TiltPosition === "closed"
+        ? this.platform.Characteristic.CurrentSlatState.FIXED
+        : this.platform.Characteristic.CurrentSlatState.SWINGING;
+
+      this.slatService.updateCharacteristic(
+        this.platform.Characteristic.CurrentTiltAngle,
+        tiltAngle,
+      );
+      this.slatService.updateCharacteristic(
+        this.platform.Characteristic.CurrentSlatState,
+        slatState,
+      );
+    }
+
     if (anyStateChanged) {
       const { name } = this.accessory.context.device;
       this.platform.logger.debug(
