@@ -33,6 +33,7 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
   public lastAutoSunCommand = 0; // Timestamp of last command to prevent flickering
   public onPositionUpdate: ((position: number, isStopped: boolean) => void) | null = null;
   private targetPositionTimer: ReturnType<typeof setTimeout> | null = null;
+  private pendingTargetValue: number | null = null;
   public movementStartTime = 0; // Timestamp when movement command was dispatched
 
   constructor(
@@ -261,6 +262,8 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
 
   setTiltedOn(value: CharacteristicValue) {
     this.tilted = value as boolean;
+    // If a position change is pending, restart debounce so it picks up the new tilt
+    this.restartPendingPosition();
   }
 
   getTiltedOn(): CharacteristicValue {
@@ -269,6 +272,7 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
 
   setOpenedOn(value: CharacteristicValue) {
     this.opened = value as boolean;
+    this.restartPendingPosition();
   }
 
   getOpenedOn(): CharacteristicValue {
@@ -376,14 +380,29 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
   }
 
   async setTargetPosition(value: CharacteristicValue) {
+    this.pendingTargetValue = value as number;
     if (this.targetPositionTimer) {
       clearTimeout(this.targetPositionTimer);
     }
     this.targetPositionTimer = setTimeout(() => {
       this.targetPositionTimer = null;
+      this.pendingTargetValue = null;
       this.movementStartTime = Date.now();
       this.handleSetTargetPosition(value as number);
     }, 300);
+  }
+
+  private restartPendingPosition() {
+    if (this.targetPositionTimer && this.pendingTargetValue !== null) {
+      clearTimeout(this.targetPositionTimer);
+      const value = this.pendingTargetValue;
+      this.targetPositionTimer = setTimeout(() => {
+        this.targetPositionTimer = null;
+        this.pendingTargetValue = null;
+        this.movementStartTime = Date.now();
+        this.handleSetTargetPosition(value);
+      }, 300);
+    }
   }
 
   async handleSetTargetPosition(value: number) {
@@ -505,11 +524,8 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
       );
     }
 
-    // Don't update TargetPosition from Loxone while:
-    // - user is actively scrubbing the slider (debounce timer pending)
-    // - movement just started and hasn't stabilized yet (first 700ms)
-    const isStabilizing = this.movementStartTime > 0 && (Date.now() - this.movementStartTime) < 700;
-    if (this.targetPositionTimer || isStabilizing) {
+    // Don't update TargetPosition from Loxone while user is actively scrubbing the slider
+    if (this.targetPositionTimer) {
       newStates.TargetPosition = this.states.TargetPosition;
     }
 
