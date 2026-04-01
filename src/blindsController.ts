@@ -287,15 +287,14 @@ export class BlindsController {
       )}"`,
     );
 
-    if (platformAccessory.getPositionState() !== 2) {
-      // Stop the blinds at reached position
-      await this.sendMoveJalousieCommand(
-        platformAccessory,
-        false,
-        isMovingDown ? "FullDown" : "FullUp",
-      );
-      await sleep(BLINDS_STOP_SETTLE_DELAY);
-    }
+    // Always stop the blind first — it may still be moving when we reach target
+    await this.sendMoveJalousieCommand(
+      platformAccessory,
+      false,
+      isMovingDown ? "FullDown" : "FullUp",
+    );
+    await sleep(BLINDS_STOP_SETTLE_DELAY);
+
     if (blindsType === "awning") {
       return;
     }
@@ -303,7 +302,7 @@ export class BlindsController {
     if (isMovingDown) {
       if (tilt === "closed") {
         this.platform.logger.debug(
-          "   👍 Nothing to do, the blinds are already closed",
+          "   👍 Tilt is closed, no additional tilt adjustment needed",
         );
         return;
       } else if (tilt === "tilted") {
@@ -346,7 +345,7 @@ export class BlindsController {
         );
       } else if (tilt === "open") {
         this.platform.logger.debug(
-          "   👍 Nothing to do, the blinds are already open",
+          "   👍 Tilt is open, no additional tilt adjustment needed",
         );
         return;
       }
