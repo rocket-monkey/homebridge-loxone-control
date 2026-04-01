@@ -69,10 +69,8 @@ export class BlindsController {
           const delay = index * BLINDS_COMMAND_STAGGER_DELAY;
           await this.moveBlindsToPositionNow(command, delay);
           command.platformAccessory.resetTiltPositions();
-          // After movement completes, check if a new desired tilt was set during movement
-          if (command.platformAccessory.desiredTilt) {
-            command.platformAccessory.applyDesiredTilt();
-          }
+          // After movement completes, apply any desired tilt that was set during movement
+          command.platformAccessory.applyDesiredTilt();
         });
         Promise.all(promises).then(() => {
           this.platform.logger.debug("✅ All blind commands completed");

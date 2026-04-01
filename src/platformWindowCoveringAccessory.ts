@@ -282,15 +282,17 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
       this.platform.logger.info(
         `🔄 ${name}: Applying tilt "${this.desiredTilt}" at position ${currentPosition}%`,
       );
-      const isAwning = this.accessory.context.device.blindsType === "awning" ||
-        this.accessory.context.device.blindsTiming?.includes("awning");
-      this.platform.blindsController.moveBlindsToFinalPosition({
-        platformAccessory: this,
-        isMovingDown: true,
-        tilt: this.desiredTilt,
-        blindsType: isAwning ? "awning" : "blinds",
-      });
+      const tilt = this.desiredTilt;
       this.desiredTilt = null;
+
+      // Set tilt flags and trigger movement at current position
+      // The blinds controller will see steps=0 and apply tilt-only
+      this.tilted = tilt === "tilted";
+      this.opened = tilt === "open";
+      this.platform.blindsController.moveBlindsToPosition({
+        platformAccessory: this,
+        value: currentPosition,
+      });
     }
   }
 
