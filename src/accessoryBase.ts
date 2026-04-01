@@ -30,6 +30,14 @@ export class AccessoryBase {
   }
 
   /**
+   * Get initials from the device name (e.g. "Kitchen Blinds" → "KB").
+   */
+  protected get namePrefix(): string {
+    const name = this.accessory.context.device?.name || "";
+    return name.split(/\s+/).map((w: string) => w[0]?.toUpperCase() || "").join("");
+  }
+
+  /**
    * Set both Name and ConfiguredName on a service.
    * HomeKit uses ConfiguredName for display after pairing.
    */

@@ -83,7 +83,7 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
           `${device.name} Slats`,
           `${device.room}-${device.name}-${device.type}-slats`,
         );
-      this.setServiceName(this.slatService, "Slats");
+      this.setServiceName(this.slatService, `${this.namePrefix} Slats`);
       this.slatService
         .getCharacteristic(this.platform.Characteristic.CurrentSlatState)
         .onGet(this.getCurrentSlatState.bind(this));
@@ -104,7 +104,7 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
           `${device.name} Tilted`,
           `${device.room}-${device.name}-${device.type}-tilted`,
         );
-      this.setServiceName(this.tiltedSwitchService, "Tilted");
+      this.setServiceName(this.tiltedSwitchService, `${this.namePrefix} Tilted`);
 
       this.tiltedSwitchService
         .getCharacteristic(this.platform.Characteristic.On)
@@ -118,7 +118,7 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
           `${device.name} Opened`,
           `${device.room}-${device.name}-${device.type}-opened`,
         );
-      this.setServiceName(this.openedSwitchService, "Opened");
+      this.setServiceName(this.openedSwitchService, `${this.namePrefix} Opened`);
 
       this.openedSwitchService
         .getCharacteristic(this.platform.Characteristic.On)
@@ -134,7 +134,7 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
         `${device.name} Shade`,
         `${device.room}-${device.name}-${device.type}-shade`,
       );
-    this.setServiceName(this.shadeSwitchService, "Shade");
+    this.setServiceName(this.shadeSwitchService, `${this.namePrefix} Shade`);
 
     this.shadeSwitchService
       .getCharacteristic(this.platform.Characteristic.On)
@@ -149,7 +149,7 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
         `${device.name} Auto Sun Position`,
         `${device.room}-${device.name}-${device.type}-autosun`,
       );
-    this.setServiceName(this.autoSunSwitchService, "Auto Sun");
+    this.setServiceName(this.autoSunSwitchService, `${this.namePrefix} Auto Sun`);
 
     this.autoSunSwitchService
       .getCharacteristic(this.platform.Characteristic.On)
@@ -165,7 +165,7 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
           `${device.name} Fully In`,
           `${device.room}-${device.name}-${device.type}-fullyin`,
         );
-      this.setServiceName(this.fullyInSwitchService, "Fully In");
+      this.setServiceName(this.fullyInSwitchService, `${this.namePrefix} Fully In`);
 
       this.fullyInSwitchService
         .getCharacteristic(this.platform.Characteristic.On)
@@ -179,7 +179,7 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
           `${device.name} Fully Out`,
           `${device.room}-${device.name}-${device.type}-fullyout`,
         );
-      this.setServiceName(this.fullyOutSwitchService, "Fully Out");
+      this.setServiceName(this.fullyOutSwitchService, `${this.namePrefix} Fully Out`);
 
       this.fullyOutSwitchService
         .getCharacteristic(this.platform.Characteristic.On)
@@ -590,7 +590,7 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
         if (typeof value === "object" && value !== null && "text" in value) {
           const text = (value as { text: string }).text;
           if (text && text.includes("Automatik Beschattung")) {
-            const isActive = text.includes("aktiv") && !text.includes("deaktiviert");
+            const isActive = text.includes("aktiv") && !text.includes("deaktiviert") && !text.includes("inaktiv");
             this.platform.logger.debug(
               `☀️ ${this.accessory.context.device.name}: Automation text: "${text}", interpreted as: ${isActive ? "ACTIVE" : "INACTIVE"}`,
             );

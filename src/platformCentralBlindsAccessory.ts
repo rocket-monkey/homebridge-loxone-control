@@ -2,6 +2,7 @@ import { CharacteristicValue, PlatformAccessory, Service } from "homebridge";
 import { AccessoryBase } from "./accessoryBase.js";
 import { LoxoneControlPlatform } from "./platform.js";
 import { sendCommandSafe } from "./loxone/utils/sendCommand.js";
+import { sleep } from "./loxone/utils/sleep.js";
 import { States } from "./loxone/types.js";
 
 export class PlatformCentralBlindsAccessory extends AccessoryBase {
@@ -9,8 +10,7 @@ export class PlatformCentralBlindsAccessory extends AccessoryBase {
     return "Loxone Central Blinds";
   }
 
-  private allUpService: Service;
-  private allDownService: Service;
+  private switchServices: Service[] = [];
 
   constructor(
     public readonly platform: LoxoneControlPlatform,
@@ -21,67 +21,59 @@ export class PlatformCentralBlindsAccessory extends AccessoryBase {
 
     const { device } = accessory.context;
 
-    // "All Up" momentary button
-    this.allUpService =
-      this.accessory.getService(`${device.name} All Up`) ||
-      this.accessory.addService(
-        this.platform.Service.Switch,
-        `${device.name} All Up`,
-        `${device.name}-all-up`,
-      );
-    this.setServiceName(this.allUpService, "All Up");
-
-    this.allUpService
-      .getCharacteristic(this.platform.Characteristic.On)
-      .onSet(this.setAllUp.bind(this))
-      .onGet(() => false);
-
-    // "All Down" momentary button
-    this.allDownService =
-      this.accessory.getService(`${device.name} All Down`) ||
-      this.accessory.addService(
-        this.platform.Service.Switch,
-        `${device.name} All Down`,
-        `${device.name}-all-down`,
-      );
-    this.setServiceName(this.allDownService, "All Down");
-
-    this.allDownService
-      .getCharacteristic(this.platform.Characteristic.On)
-      .onSet(this.setAllDown.bind(this))
-      .onGet(() => false);
-  }
-
-  async setAllUp(value: CharacteristicValue) {
-    if (value) {
-      const { name } = this.accessory.context.device;
-      this.platform.logger.info(`⬆️ ${name}: Sending All Up command`);
-      await sendCommandSafe(this.platform, this.identifier, ["FullUp"]);
-      setTimeout(() => {
-        this.allUpService.updateCharacteristic(
-          this.platform.Characteristic.On,
-          false,
-        );
-      }, 100);
+    // Remove all non-AccessoryInformation services from previous versions
+    const servicesToRemove = this.accessory.services.filter(
+      (s) => s.UUID !== this.platform.Service.AccessoryInformation.UUID,
+    );
+    for (const s of servicesToRemove) {
+      this.accessory.removeService(s);
     }
+
+    const buttons: Array<{ name: string; subtype: string; emoji: string; command: string }> = [
+      { name: `${device.name} Up`, subtype: `${device.name}-all-up`, emoji: "⬆️", command: "FullUp" },
+      { name: `${device.name} Down`, subtype: `${device.name}-all-down`, emoji: "⬇️", command: "FullDown" },
+      { name: `${device.name} Stop`, subtype: `${device.name}-stop`, emoji: "✋", command: "stop" },
+      { name: `${device.name} Auto`, subtype: `${device.name}-auto`, emoji: "☀️", command: "auto" },
+      { name: `${device.name} Shade`, subtype: `${device.name}-shade`, emoji: "🌤️", command: "shade" },
+    ];
+
+    buttons.forEach(({ name, subtype, emoji, command }, index) => {
+      const svc = this.accessory.addService(
+        this.platform.Service.Switch,
+        name,
+        subtype,
+      );
+      this.setServiceName(svc, name);
+
+      svc.getCharacteristic(this.platform.Characteristic.On)
+        .onGet(() => false)
+        .onSet(async (value: CharacteristicValue) => {
+          if (value) {
+            this.platform.logger.info(`${emoji} ${device.name}: Sending ${command}`);
+            await sendCommandSafe(this.platform, this.identifier, [command]);
+            // Wait briefly then reset — same pattern as resetTiltPositions
+            // which works in HomeKit even though Homebridge UI doesn't reflect it
+            await sleep(1000);
+            this.resetAllButtons();
+          }
+        });
+
+      this.switchServices.push(svc);
+
+      if (index === 0) {
+        this.service = svc;
+      }
+    });
   }
 
-  async setAllDown(value: CharacteristicValue) {
-    if (value) {
-      const { name } = this.accessory.context.device;
-      this.platform.logger.info(`⬇️ ${name}: Sending All Down command`);
-      await sendCommandSafe(this.platform, this.identifier, ["FullDown"]);
-      setTimeout(() => {
-        this.allDownService.updateCharacteristic(
-          this.platform.Characteristic.On,
-          false,
-        );
-      }, 100);
+  private resetAllButtons() {
+    for (const svc of this.switchServices) {
+      svc.updateCharacteristic(this.platform.Characteristic.On, false);
     }
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   setState = (_newStates: States) => {
-    // Central blinds don't have meaningful state to track
+    this.resetAllButtons();
   };
 }

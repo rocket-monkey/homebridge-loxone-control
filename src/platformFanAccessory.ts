@@ -58,7 +58,7 @@ export class PlatformFanAccessory extends AccessoryBase {
             `${name} ${levelToSet.loxoneLevelName}`,
             `${name}-${levelToSet.index}`,
           );
-        this.setServiceName(buttonSwitchService, levelToSet.loxoneLevelName);
+        this.setServiceName(buttonSwitchService, `${this.namePrefix} ${levelToSet.loxoneLevelName}`);
 
         buttonSwitchService
           .getCharacteristic(this.platform.Characteristic.On)
