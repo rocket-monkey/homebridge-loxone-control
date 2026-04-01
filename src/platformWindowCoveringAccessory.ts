@@ -29,10 +29,12 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
 
   public tilted = false;
   public opened = false;
+  public desiredTilt: BlindsTilt | null = null; // Desired tilt angle, applied after movement completes
   public autoSunPosition = false;
   public lastAutoSunCommand = 0; // Timestamp of last command to prevent flickering
   public onPositionUpdate: ((position: number, isStopped: boolean) => void) | null = null;
   private targetPositionTimer: ReturnType<typeof setTimeout> | null = null;
+  private tiltTimer: ReturnType<typeof setTimeout> | null = null;
   private pendingTargetValue: number | null = null;
   public movementStartTime = 0; // Timestamp when movement command was dispatched
 
@@ -230,15 +232,12 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
       targetTilt = "tilted";
     }
 
-    if (targetTilt === this.states.TiltPosition) {
-      return;
-    }
-
     this.platform.logger.info(
-      `🔄 ${name}: Setting tilt from "${this.states.TiltPosition}" to "${targetTilt}" (angle: ${angle})`,
+      `🔄 ${name}: Desired tilt set to "${targetTilt}" (angle: ${angle})`,
     );
 
-    // Update the tilted/opened switches to reflect the tilt target
+    // Store desired tilt and update switch states
+    this.desiredTilt = targetTilt;
     this.tilted = targetTilt === "tilted";
     this.opened = targetTilt === "open";
     this.tiltedSwitchService?.updateCharacteristic(
@@ -250,19 +249,54 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
       this.opened,
     );
 
-    // Use the blinds controller to move to current position with new tilt
+    // If a position command is already pending (scene), let it handle the tilt
+    if (this.targetPositionTimer) {
+      return;
+    }
+
+    // If currently moving, do nothing — tilt will be applied after movement completes
+    if (this.onPositionUpdate) {
+      return;
+    }
+
+    // Not moving, no position pending — apply tilt at current position after a debounce
+    // (slightly longer than position debounce so position commands win if sent together)
+    if (this.tiltTimer) {
+      clearTimeout(this.tiltTimer);
+    }
+    this.tiltTimer = setTimeout(() => {
+      this.tiltTimer = null;
+      this.applyDesiredTilt();
+    }, 500);
+  }
+
+  applyDesiredTilt() {
+    if (!this.desiredTilt || this.desiredTilt === this.states.TiltPosition) {
+      this.desiredTilt = null;
+      return;
+    }
+
     const currentPosition = this.states.Position || 0;
     if (currentPosition > 0) {
-      this.platform.blindsController.moveBlindsToPosition({
+      const { name } = this.accessory.context.device;
+      this.platform.logger.info(
+        `🔄 ${name}: Applying tilt "${this.desiredTilt}" at position ${currentPosition}%`,
+      );
+      const isAwning = this.accessory.context.device.blindsType === "awning" ||
+        this.accessory.context.device.blindsTiming?.includes("awning");
+      this.platform.blindsController.moveBlindsToFinalPosition({
         platformAccessory: this,
-        value: currentPosition,
+        isMovingDown: true,
+        tilt: this.desiredTilt,
+        blindsType: isAwning ? "awning" : "blinds",
       });
+      this.desiredTilt = null;
     }
   }
 
   setTiltedOn(value: CharacteristicValue) {
     this.tilted = value as boolean;
-    // If a position change is pending, restart debounce so it picks up the new tilt
+    this.desiredTilt = this.opened ? "open" : this.tilted ? "tilted" : "closed";
     this.restartPendingPosition();
   }
 
@@ -272,6 +306,7 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
 
   setOpenedOn(value: CharacteristicValue) {
     this.opened = value as boolean;
+    this.desiredTilt = this.opened ? "open" : this.tilted ? "tilted" : "closed";
     this.restartPendingPosition();
   }
 
@@ -406,8 +441,11 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
   }
 
   async handleSetTargetPosition(value: number) {
-    const actualTilt = this.opened ? "open" : this.tilted ? "tilted" : "closed";
+    // Use desiredTilt if explicitly set (from tilt slider or scene), otherwise from switch buttons
+    const actualTilt = this.desiredTilt || (this.opened ? "open" : this.tilted ? "tilted" : "closed");
     const tilt = (value > 0 ? actualTilt : "closed") as BlindsTilt;
+    // Clear desiredTilt since it's being consumed by this position command
+    this.desiredTilt = null;
 
     if (
       Math.abs(value - this.states.Position) < 6 &&

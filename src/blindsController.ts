@@ -69,6 +69,10 @@ export class BlindsController {
           const delay = index * BLINDS_COMMAND_STAGGER_DELAY;
           await this.moveBlindsToPositionNow(command, delay);
           command.platformAccessory.resetTiltPositions();
+          // After movement completes, check if a new desired tilt was set during movement
+          if (command.platformAccessory.desiredTilt) {
+            command.platformAccessory.applyDesiredTilt();
+          }
         });
         Promise.all(promises).then(() => {
           this.platform.logger.debug("✅ All blind commands completed");
@@ -287,13 +291,16 @@ export class BlindsController {
       )}"`,
     );
 
-    // Always stop the blind first — it may still be moving when we reach target
-    await this.sendMoveJalousieCommand(
-      platformAccessory,
-      false,
-      isMovingDown ? "FullDown" : "FullUp",
-    );
-    await sleep(BLINDS_STOP_SETTLE_DELAY);
+    // Stop the blind if it's still moving (it may still be in motion when position-watching triggers)
+    const isStopped = platformAccessory.getPositionState() === this.platform.Characteristic.PositionState.STOPPED;
+    if (!isStopped) {
+      await this.sendMoveJalousieCommand(
+        platformAccessory,
+        false,
+        isMovingDown ? "FullDown" : "FullUp",
+      );
+      await sleep(BLINDS_STOP_SETTLE_DELAY);
+    }
 
     if (blindsType === "awning") {
       return;
