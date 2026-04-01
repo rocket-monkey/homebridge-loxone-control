@@ -141,16 +141,8 @@ export class PlatformLightAccessory extends AccessoryBase {
       newStates.On = true;
     }
 
-    if (newStates.On && this.powerOnCooldownActive) {
-      const { name } = this.accessory.context.device;
-      this.platform.logger.info(
-        `💡 Ignoring external turn-on for "${name}" — power-on cooldown active`,
-      );
-      this.service?.updateCharacteristic(
-        this.platform.Characteristic.On,
-        false,
-      );
-      return;
+    if (!newStates.On && this.states?.On) {
+      this.startPowerOnCooldown();
     }
 
     this.service?.updateCharacteristic(
