@@ -30,7 +30,8 @@
     },
     {
       "name": "Kitchen Headlight",
-      "identifier": "Küche • Beleuchtung:type=Switch:1b2ab7ba-008e-2062-ffff6d9a993dda13"
+      "identifier": "Küche • Beleuchtung:type=Switch:1b2ab7ba-008e-2062-ffff6d9a993dda13",
+      "powerOnCooldown": 5
     },
     {
       "name": "Kitchen Spot",

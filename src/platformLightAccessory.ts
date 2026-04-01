@@ -5,6 +5,9 @@ import { LoxoneControlPlatform } from "./platform.js";
 import { States } from "./loxone/types.js";
 
 export class PlatformLightAccessory extends AccessoryBase {
+  private powerOnCooldownActive = false;
+  private powerOnCooldownTimer: ReturnType<typeof setTimeout> | null = null;
+
   protected override get modelName() {
     return "Loxone Light";
   }
@@ -41,6 +44,20 @@ export class PlatformLightAccessory extends AccessoryBase {
     }
 
     const { name } = this.accessory.context.device;
+
+    if (value && this.powerOnCooldownActive) {
+      this.platform.logger.info(
+        `💡 Ignoring turn-on for "${name}" — power-on cooldown active`,
+      );
+      setTimeout(() => {
+        this.service?.updateCharacteristic(
+          this.platform.Characteristic.On,
+          false,
+        );
+      }, 100);
+      return;
+    }
+
     this.platform.logger.info(
       `💡 Control light switch "${name}" from ${
         this.states.On ? "On" : "Off"
@@ -49,6 +66,10 @@ export class PlatformLightAccessory extends AccessoryBase {
     await sendCommandSafe(this.platform, this.identifier, [
       value ? "on" : "off",
     ]);
+
+    if (!value) {
+      this.startPowerOnCooldown();
+    }
   }
 
   async getOn(): Promise<CharacteristicValue> {
@@ -63,6 +84,23 @@ export class PlatformLightAccessory extends AccessoryBase {
     }
 
     const { name } = this.accessory.context.device;
+
+    if (this.powerOnCooldownActive) {
+      this.platform.logger.info(
+        `💡 Ignoring brightness change for "${name}" — power-on cooldown active`,
+      );
+      setTimeout(() => {
+        this.service?.updateCharacteristic(
+          this.platform.Characteristic.Brightness,
+          this.states?.Brightness || 0,
+        );
+        this.service?.updateCharacteristic(
+          this.platform.Characteristic.On,
+          false,
+        );
+      }, 100);
+      return;
+    }
     this.platform.logger.info(
       `💡 Control brightness "${name}" from ${this.states.Brightness}% to ${value}%`,
     );
@@ -74,6 +112,32 @@ export class PlatformLightAccessory extends AccessoryBase {
 
   async getBrightness(): Promise<CharacteristicValue> {
     return this.states?.Brightness || 0;
+  }
+
+  private startPowerOnCooldown() {
+    const cooldownSeconds = this.accessory.context.device.powerOnCooldown;
+    if (!cooldownSeconds || cooldownSeconds <= 0) {
+      return;
+    }
+
+    const { name } = this.accessory.context.device;
+
+    if (this.powerOnCooldownTimer) {
+      clearTimeout(this.powerOnCooldownTimer);
+    }
+
+    this.powerOnCooldownActive = true;
+    this.platform.logger.info(
+      `💡 "${name}" power-on cooldown started (${cooldownSeconds}s)`,
+    );
+
+    this.powerOnCooldownTimer = setTimeout(() => {
+      this.powerOnCooldownActive = false;
+      this.powerOnCooldownTimer = null;
+      this.platform.logger.info(
+        `💡 "${name}" power-on cooldown ended`,
+      );
+    }, cooldownSeconds * 1000);
   }
 
   setState = (newValues: States) => {
@@ -88,6 +152,19 @@ export class PlatformLightAccessory extends AccessoryBase {
     } else {
       newStates.On = true;
     }
+
+    if (newStates.On && this.powerOnCooldownActive) {
+      const { name } = this.accessory.context.device;
+      this.platform.logger.info(
+        `💡 Ignoring external turn-on for "${name}" — power-on cooldown active`,
+      );
+      this.service?.updateCharacteristic(
+        this.platform.Characteristic.On,
+        false,
+      );
+      return;
+    }
+
     this.service?.updateCharacteristic(
       this.platform.Characteristic.On,
       newStates.On,
