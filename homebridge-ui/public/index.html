@@ -13,8 +13,7 @@
     align-items: center;
     gap: 1rem;
   }
-  
-  /* Better visibility for error/warning messages in both light and dark modes */
+
   .error-message {
     background: rgba(255, 0, 0, 0.35);
     color: #ffffff;
@@ -23,72 +22,90 @@
     padding: 9px;
     border-radius: 4px;
   }
-  
-  /* Dark mode specific adjustments */
+
+  .configured-device {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    margin-bottom: 6px;
+    border-radius: 4px;
+    border: 1px solid rgba(128, 128, 128, 0.3);
+  }
+
+  .configured-device .device-info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .configured-device .device-name {
+    font-weight: bold;
+    display: block;
+  }
+
+  .configured-device .device-type {
+    font-size: 0.85em;
+    opacity: 0.7;
+  }
+
+  .configured-device .device-actions {
+    display: flex;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+
   @media (prefers-color-scheme: dark) {
     .error-message {
       background: rgba(255, 50, 50, 0.45);
       border: 1px solid rgba(255, 100, 100, 0.5);
     }
   }
-  
-  /* Light mode - ensure text is dark */
+
   @media (prefers-color-scheme: light) {
-    #discoveredDevices li {
+    #discoveredDevices li, #configuredDevicesList .configured-device {
       color: #212529;
     }
-    
-    /* General text elements */
     p, .lead, .small, label, span {
       color: #212529;
     }
   }
-  
-  /* Dark mode - ensure text is light */
+
   @media (prefers-color-scheme: dark) {
-    #discoveredDevices li {
+    #discoveredDevices li, #configuredDevicesList .configured-device {
       color: #f8f9fa;
     }
-    
-    /* General text elements */
     p, .lead, .small, label, span {
       color: #f8f9fa;
     }
-    
-    /* Form elements */
     .form-control {
       background-color: #495057;
       border-color: #6c757d;
       color: #f8f9fa;
     }
-    
     .form-control:focus {
       background-color: #495057;
       border-color: #80bdff;
       color: #f8f9fa;
     }
-    
-    /* Card elements */
     .card {
       background-color: #495057;
       border-color: #6c757d;
     }
-    
     .card-body {
       color: #f8f9fa;
     }
-    
-    /* Button elements */
     .btn-outline {
       background-color: transparent;
       border-color: #6c757d;
       color: #f8f9fa;
     }
-    
     .btn-outline:hover {
       background-color: #6c757d;
       border-color: #6c757d;
       color: #f8f9fa;
+    }
+    .configured-device {
+      border-color: rgba(255, 255, 255, 0.15);
     }
   }
 </style>
@@ -114,12 +131,83 @@
   <button type="button" class="btn btn-primary ml-0" id="menuSetup">
     Setup
   </button>
+  <button type="button" class="btn btn-primary" id="menuConfigured">
+    Configured
+  </button>
   <button type="button" class="btn btn-primary" id="menuDevices">
-    Discover Devices
+    Discover
   </button>
   <button type="button" class="btn btn-primary mr-0" id="menuHome">
     Advanced
   </button>
+</div>
+
+<div id="pageConfigured" class="mt-4" style="display: none">
+  <div id="configuredDevicesList"></div>
+
+  <form id="editAccessoryForm" style="display: none">
+    <p id="editAccessoryTitle" class="lead"></p>
+    <p id="editAccessoryIdentifier" class="small" style="word-break: break-all;"></p>
+    <input type="hidden" id="editDeviceIndex" />
+
+    <div class="form-group">
+      <label for="editAccessoryName">Display name for HomeKit</label>
+      <input type="text" class="form-control" id="editAccessoryName" required />
+    </div>
+    <div class="form-group">
+      <label for="editAccessoryTypeSelect">Accessory type</label>
+      <select class="form-control" id="editAccessoryTypeSelect">
+        <option value="">Auto-detect</option>
+        <option value="fan">Fan</option>
+        <option value="light">Light</option>
+        <option value="temperature">Temperature</option>
+        <option value="blinds">Blinds</option>
+        <option value="centralBlinds">Central Blinds (All Up/Down)</option>
+        <option value="toggle">Toggle</option>
+      </select>
+    </div>
+    <div class="form-group edit-accessory-light">
+      <checkbox-widget>
+        <label class="hb-uix-switch" for="editLightOutlet">
+          <input type="checkbox" id="editLightOutlet" class="ng-untouched ng-pristine ng-valid" />
+          <span>Should this device be handled as outlet?</span>
+          <span class="hb-uix-slider hb-uix-round"></span>
+        </label>
+      </checkbox-widget>
+    </div>
+    <div class="form-group edit-accessory-fan">
+      <checkbox-widget>
+        <label class="hb-uix-switch" for="editFanBathroom">
+          <input type="checkbox" id="editFanBathroom" class="ng-untouched ng-pristine ng-valid" />
+          <span>Should this device be handled as bathroom fan?</span>
+          <span class="hb-uix-slider hb-uix-round"></span>
+        </label>
+      </checkbox-widget>
+    </div>
+    <div class="form-group edit-accessory-fan">
+      <label for="editFanAddButtons">Additional fan levels (comma separated)</label>
+      <input type="text" class="form-control" id="editFanAddButtons" />
+    </div>
+    <div class="form-group edit-accessory-blinds">
+      <label for="editBlindsType">Window covering type</label>
+      <select class="form-control" id="editBlindsType">
+        <option value="blinds">Blinds (with tilt control)</option>
+        <option value="awning">Awning (no tilt)</option>
+      </select>
+    </div>
+  </form>
+
+  <div class="text-center edit-accessory-actions" style="display: none">
+    <button id="saveEditButton" type="button" class="btn btn-primary">
+      Save
+    </button>
+    <button id="deleteEditButton" type="button" class="btn btn-danger">
+      Delete
+    </button>
+    <button id="cancelEditButton" type="button" class="btn btn-outline">
+      Cancel
+    </button>
+  </div>
 </div>
 
 <div id="pageDevices" class="mt-4" style="display: none">
@@ -132,7 +220,7 @@
     <input type="hidden" id="accessoryIdentifier" />
 
     <div class="form-group">
-      <label for="accessoryName">Disply name for homekit</label>
+      <label for="accessoryName">Display name for HomeKit</label>
       <input type="text" class="form-control" id="accessoryName" required />
     </div>
     <div class="form-group">
@@ -141,6 +229,7 @@
         <option value="light">Light</option>
         <option value="temperature">Temperature</option>
         <option value="blinds">Blinds</option>
+        <option value="centralBlinds">Central Blinds (All Up/Down)</option>
         <option value="toggle">Toggle</option>
       </select>
     </div>
@@ -178,18 +267,11 @@
       <input type="text" class="form-control" id="fanAddButtons" required />
     </div>
     <div class="form-group accessory-blinds">
-      <select class="form-control" id="blindsTiming">
-        <option value="window">Window</option>
-        <option value="window-big">Big Window</option>
-        <option value="awning">Awning</option>
+      <label for="blindsType">Window covering type</label>
+      <select class="form-control" id="blindsType">
+        <option value="blinds">Blinds (with tilt control)</option>
+        <option value="awning">Awning (no tilt)</option>
       </select>
-    </div>
-    <div class="form-group accessory-blinds">
-      <label for="blindsMaxPosition"
-        >Define a maximum (e.g. 80%) that the blinds can be opened
-        (optional)</label
-      >
-      <input type="text" class="form-control" id="blindsMaxPosition" />
     </div>
   </form>
 
@@ -219,72 +301,6 @@
           "index:levelName"</label
         >
         <input type="text" class="form-control" id="fanLevels" required />
-      </div>
-      <div class="form-group">
-        <label for="blindsTimingWindow"
-          >Time in seconds from 0-100%, for blinds "window"</label
-        >
-        <input
-          type="text"
-          class="form-control"
-          id="blindsTimingWindow"
-          required
-        />
-      </div>
-      <div class="form-group">
-        <label for="blindsTimingUpWindow"
-          >Time in seconds from 100-0%, for blinds "window"</label
-        >
-        <input
-          type="text"
-          class="form-control"
-          id="blindsTimingUpWindow"
-          required
-        />
-      </div>
-      <div class="form-group">
-        <label for="blindsTimingWindowBig"
-          >Time in seconds from 0-100%, for blinds "window-big"</label
-        >
-        <input
-          type="text"
-          class="form-control"
-          id="blindsTimingWindowBig"
-          required
-        />
-      </div>
-      <div class="form-group">
-        <label for="blindsTimingUpWindowBig"
-          >Time in seconds from 100-0%, for blinds "window-big"</label
-        >
-        <input
-          type="text"
-          class="form-control"
-          id="blindsTimingUpWindowBig"
-          required
-        />
-      </div>
-      <div class="form-group">
-        <label for="blindsTimingAwning"
-          >Time in seconds from 0-100%, for blinds "awning"</label
-        >
-        <input
-          type="text"
-          class="form-control"
-          id="blindsTimingAwning"
-          required
-        />
-      </div>
-      <div class="form-group">
-        <label for="blindsTimingUpAwning"
-          >Time in seconds from 100-0%, for blinds "awning"</label
-        >
-        <input
-          type="text"
-          class="form-control"
-          id="blindsTimingUpAwning"
-          required
-        />
       </div>
       <div class="form-group">
         <checkbox-widget>
@@ -333,6 +349,25 @@
 
 <script>
   const urlPrefix = `${location.protocol}//${location.hostname}:18081`;
+  const allMenuButtons = ["menuSetup", "menuConfigured", "menuDevices", "menuHome"];
+  const allPages = ["pageCredentials", "pageConfigured", "pageDevices", "pageAdvanced"];
+
+  switchPage = (activeMenu, activePage) => {
+    allMenuButtons.forEach((id) => {
+      const el = document.getElementById(id);
+      if (id === activeMenu) {
+        el.classList.add("btn-elegant");
+        el.classList.remove("btn-primary");
+      } else {
+        el.classList.remove("btn-elegant");
+        el.classList.add("btn-primary");
+      }
+    });
+    allPages.forEach((id) => {
+      document.getElementById(id).style.display = id === activePage ? "block" : "none";
+    });
+  };
+
   showIntro = () => {
     const introContinue = document.getElementById("introContinue");
     introContinue.addEventListener("click", () => {
@@ -344,31 +379,15 @@
     });
     document.getElementById("pageIntro").style.display = "block";
   };
+
   showCredentials = () => {
-    homebridge.showSpinner();
-    document.getElementById("menuHome").classList.remove("btn-elegant");
-    document.getElementById("menuHome").classList.add("btn-primary");
-    document.getElementById("menuDevices").classList.remove("btn-elegant");
-    document.getElementById("menuDevices").classList.add("btn-primary");
-    document.getElementById("menuSetup").classList.add("btn-elegant");
-    document.getElementById("menuSetup").classList.remove("btn-primary");
-    document.getElementById("pageAdvanced").style.display = "none";
-    document.getElementById("pageDevices").style.display = "none";
-    document.getElementById("pageCredentials").style.display = "block";
-    homebridge.hideSpinner();
+    switchPage("menuSetup", "pageCredentials");
   };
+
   showDevices = async () => {
     try {
       homebridge.showSpinner();
-      document.getElementById("menuHome").classList.remove("btn-elegant");
-      document.getElementById("menuHome").classList.add("btn-primary");
-      document.getElementById("menuDevices").classList.add("btn-elegant");
-      document.getElementById("menuDevices").classList.remove("btn-primary");
-      document.getElementById("menuSetup").classList.remove("btn-elegant");
-      document.getElementById("menuSetup").classList.add("btn-primary");
-      document.getElementById("pageCredentials").style.display = "none";
-      document.getElementById("pageAdvanced").style.display = "none";
-      document.getElementById("pageDevices").style.display = "block";
+      switchPage("menuDevices", "pageDevices");
 
       const pluginConfig = await homebridge.getPluginConfig();
       const config = pluginConfig.length ? pluginConfig[0] : {};
@@ -377,13 +396,12 @@
         !config.loxoneUser ||
         !config.loxonePassword
       ) {
-        const innerHTML = `
-                    <li style="display: flex; align-items: center;">
-                        <div class="error-message" style="width: 100%;">
-                            <strong>Setup must be completed to unlock device discovery</strong>
-                        </div>
-                    </li>`;
-        document.querySelector("#discoveredDevices").innerHTML = innerHTML;
+        document.querySelector("#discoveredDevices").innerHTML = `
+          <li style="display: flex; align-items: center;">
+            <div class="error-message" style="width: 100%;">
+              <strong>Setup must be completed to unlock device discovery</strong>
+            </div>
+          </li>`;
         return;
       }
 
@@ -396,19 +414,181 @@
       homebridge.hideSpinner();
     }
   };
-  showAdvanced = async () => {
-    homebridge.showSpinner();
-    document.getElementById("menuHome").classList.add("btn-elegant");
-    document.getElementById("menuHome").classList.remove("btn-primary");
-    document.getElementById("menuDevices").classList.remove("btn-elegant");
-    document.getElementById("menuDevices").classList.add("btn-primary");
-    document.getElementById("menuSetup").classList.remove("btn-elegant");
-    document.getElementById("menuSetup").classList.add("btn-primary");
-    document.getElementById("pageCredentials").style.display = "none";
-    document.getElementById("pageAdvanced").style.display = "block";
-    document.getElementById("pageDevices").style.display = "none";
-    homebridge.hideSpinner();
+
+  showAdvanced = () => {
+    switchPage("menuHome", "pageAdvanced");
   };
+
+  // --- Configured Devices ---
+
+  showConfigured = async () => {
+    switchPage("menuConfigured", "pageConfigured");
+    cancelEdit();
+    await renderConfiguredDevices();
+  };
+
+  getDeviceTypeLabel = (device) => {
+    if (device.accessoryType) {
+      return device.accessoryType;
+    }
+    // Infer from identifier
+    if (device.identifier.includes("Jalousie")) return "blinds";
+    if (device.identifier.includes("Beleuchtung")) return device.lightOutlet ? "outlet" : "light";
+    if (device.identifier.includes("Lüftung")) return device.fanBathroom ? "fan (bathroom)" : "fan";
+    if (device.identifier.includes("Klima") || device.identifier.includes("InfoOnlyAnalog")) return "temperature";
+    if (device.identifier.includes("CentralJalousie")) return "toggle";
+    return "unknown";
+  };
+
+  renderConfiguredDevices = async () => {
+    const pluginConfig = await homebridge.getPluginConfig();
+    const devices = pluginConfig[0]?.devices ?? [];
+    const listEl = document.getElementById("configuredDevicesList");
+
+    if (devices.length === 0) {
+      listEl.innerHTML = `
+        <div class="error-message">
+          <strong>No devices configured yet</strong>
+        </div>`;
+      return;
+    }
+
+    listEl.innerHTML = devices.map((device, index) => {
+      const typeLabel = getDeviceTypeLabel(device);
+      return `
+        <div class="configured-device">
+          <div class="device-info">
+            <span class="device-name">${device.name}</span>
+            <span class="device-type">${typeLabel}</span>
+          </div>
+          <div class="device-actions">
+            <button type="button" class="btn btn-secondary btn-sm" onclick="editDevice(${index})">Edit</button>
+            <button type="button" class="btn btn-danger btn-sm" onclick="deleteDevice(${index})">Delete</button>
+          </div>
+        </div>`;
+    }).join("\n");
+  };
+
+  editDevice = async (index) => {
+    const pluginConfig = await homebridge.getPluginConfig();
+    const device = pluginConfig[0]?.devices?.[index];
+    if (!device) return;
+
+    document.getElementById("configuredDevicesList").style.display = "none";
+    document.getElementById("editAccessoryForm").style.display = "block";
+    document.querySelector(".edit-accessory-actions").style.display = "block";
+
+    document.getElementById("editAccessoryTitle").innerHTML =
+      `Edit "<strong>${device.name}</strong>"`;
+    document.getElementById("editAccessoryIdentifier").innerHTML =
+      `Identifier: <em>${device.identifier}</em>`;
+    document.getElementById("editDeviceIndex").value = index;
+    document.getElementById("editAccessoryName").value = device.name;
+    // Update auto-detect label to show the inferred type
+    const detectedType = getDeviceTypeLabel(device);
+    const autoOption = document.querySelector("#editAccessoryTypeSelect option[value='']");
+    autoOption.textContent = `Auto-detect (${detectedType})`;
+
+    document.getElementById("editAccessoryTypeSelect").value = device.accessoryType || "";
+
+    // Populate type-specific fields
+    document.getElementById("editLightOutlet").checked = Boolean(device.lightOutlet);
+    document.getElementById("editFanBathroom").checked = Boolean(device.fanBathroom);
+    document.getElementById("editFanAddButtons").value = device.fanAddButtons || "";
+    document.getElementById("editBlindsType").value =
+      device.blindsType || (device.blindsTiming?.includes("awning") ? "awning" : "blinds");
+
+    updateEditFormState();
+  };
+
+  updateEditFormState = () => {
+    let type = document.getElementById("editAccessoryTypeSelect").value;
+    // When auto-detect, infer type from the auto-detect label
+    if (!type) {
+      const autoText = document.querySelector("#editAccessoryTypeSelect option[value='']").textContent;
+      const match = autoText.match(/\((\w+)/);
+      type = match ? match[1] : "";
+    }
+    document.querySelectorAll(".edit-accessory-light").forEach((el) => {
+      el.style.display = type === "light" || type === "outlet" ? "block" : "none";
+    });
+    document.querySelectorAll(".edit-accessory-fan").forEach((el) => {
+      el.style.display = type === "fan" ? "block" : "none";
+    });
+    document.querySelectorAll(".edit-accessory-blinds").forEach((el) => {
+      el.style.display = type === "blinds" ? "block" : "none";
+    });
+  };
+
+  saveEditDevice = async () => {
+    const pluginConfig = await homebridge.getPluginConfig();
+    const index = parseInt(document.getElementById("editDeviceIndex").value, 10);
+    const device = pluginConfig[0]?.devices?.[index];
+    if (!device) return;
+
+    const name = document.getElementById("editAccessoryName").value;
+    if (!name) {
+      homebridge.toast.error("Please enter a name", "Error");
+      return;
+    }
+
+    // Update base fields
+    device.name = name;
+    const accessoryType = document.getElementById("editAccessoryTypeSelect").value;
+    if (accessoryType) {
+      device.accessoryType = accessoryType;
+    } else {
+      delete device.accessoryType;
+    }
+
+    // Update type-specific fields
+    const type = accessoryType || getDeviceTypeLabel(device);
+    if (type === "light") {
+      device.lightOutlet = document.getElementById("editLightOutlet").checked;
+    }
+    if (type === "fan") {
+      device.fanBathroom = document.getElementById("editFanBathroom").checked;
+      device.fanAddButtons = document.getElementById("editFanAddButtons").value || undefined;
+    }
+    if (type === "blinds") {
+      device.blindsType = document.getElementById("editBlindsType").value;
+      // Clean up legacy blindsTiming if blindsType is now set
+      if (device.blindsTiming) {
+        delete device.blindsTiming;
+      }
+      if (device.blindsMaxPosition) {
+        delete device.blindsMaxPosition;
+      }
+    }
+
+    await homebridge.updatePluginConfig(pluginConfig);
+    homebridge.toast.success("Device updated", "Success");
+    cancelEdit();
+    await renderConfiguredDevices();
+  };
+
+  deleteDevice = async (index) => {
+    const pluginConfig = await homebridge.getPluginConfig();
+    const device = pluginConfig[0]?.devices?.[index];
+    if (!device) return;
+
+    if (!confirm(`Delete "${device.name}"?`)) return;
+
+    pluginConfig[0].devices.splice(index, 1);
+    await homebridge.updatePluginConfig(pluginConfig);
+    homebridge.toast.success("Device deleted", "Success");
+    cancelEdit();
+    await renderConfiguredDevices();
+  };
+
+  cancelEdit = () => {
+    document.getElementById("configuredDevicesList").style.display = "block";
+    document.getElementById("editAccessoryForm").style.display = "none";
+    document.querySelector(".edit-accessory-actions").style.display = "none";
+  };
+
+  // --- Discover Devices (existing) ---
+
   getTypeValueFromCategory = (category) => {
     switch (category) {
       case "Lüftung":
@@ -429,38 +609,19 @@
     const accessoryTypeSelect = document.getElementById(
       "accessoryTypeSelect"
     ).value;
-    if (accessoryTypeSelect === "light") {
-      document.querySelectorAll(".accessory-light").forEach((element) => {
-        element.style.display = "block";
-      });
-    } else if (accessoryTypeSelect !== "light") {
-      document.querySelectorAll(".accessory-light").forEach((element) => {
-        element.style.display = "none";
-      });
-    }
-    if (accessoryTypeSelect === "fan") {
-      document.querySelectorAll(".accessory-fan").forEach((element) => {
-        element.style.display = "block";
-      });
-    } else if (accessoryTypeSelect !== "fan") {
-      document.querySelectorAll(".accessory-fan").forEach((element) => {
-        element.style.display = "none";
-      });
-    }
-    if (accessoryTypeSelect === "blinds") {
-      document.querySelectorAll(".accessory-blinds").forEach((element) => {
-        element.style.display = "block";
-      });
-    } else if (accessoryTypeSelect !== "blinds") {
-      document.querySelectorAll(".accessory-blinds").forEach((element) => {
-        element.style.display = "none";
-      });
-    }
+    document.querySelectorAll(".accessory-light").forEach((el) => {
+      el.style.display = accessoryTypeSelect === "light" ? "block" : "none";
+    });
+    document.querySelectorAll(".accessory-fan").forEach((el) => {
+      el.style.display = accessoryTypeSelect === "fan" ? "block" : "none";
+    });
+    document.querySelectorAll(".accessory-blinds").forEach((el) => {
+      el.style.display = accessoryTypeSelect === "blinds" ? "block" : "none";
+    });
   };
   identifyAccessory = async (identifier) => {
     try {
       homebridge.showSpinner();
-
       await fetch(`${urlPrefix}/identifyAccessory?identifier=${identifier}`);
     } catch (e) {
       homebridge.toast.error(e.error, e.message);
@@ -512,105 +673,86 @@
           : 0;
       });
     }
-    console.log("Filtering devices. Total devices:", allDevices.length);
-    console.log("Cached accessories:", cachedAccessories.length);
-    console.log("Configured devices:", devices.length);
-    
+
     const filtered = allDevices.filter((identifier) => {
-      if (identifier.includes("unknown")) {
-        return false;
-      }
-      if (identifier.includes("type=Pushbutton")) {
-        return false;
-      }
-      if (identifier.includes("type=TextState")) {
-        return false;
-      }
-      
-      // Check for exact match first
+      if (identifier.includes("unknown")) return false;
+      if (identifier.includes("type=Pushbutton")) return false;
+      if (identifier.includes("type=TextState")) return false;
+
       let existingAccessory = cachedAccessories.find(
         (accessory) => accessory.context.device.identifier === identifier
       );
       let existingDeviceConfig = devices.find(
         (device) => device.identifier === identifier
       );
-      
-      // If no exact match, try fallback matching by type and UUID suffix
+
       if (!existingAccessory && !existingDeviceConfig) {
         const identifierParts = identifier.split(":");
         if (identifierParts.length === 3) {
           const [, typeQuery, actionUuid] = identifierParts;
           const type = typeQuery.split("=")[1];
-          
-          // Check cached accessories with fallback logic
+
           existingAccessory = cachedAccessories.find((accessory) => {
-            const accIdentifierParts = accessory.context.device.identifier.split(":");
-            if (accIdentifierParts.length === 3) {
-              const [, accTypeQuery, accActionUuid] = accIdentifierParts;
-              const accType = accTypeQuery.split("=")[1];
-              return accType === type && accActionUuid === actionUuid;
+            const accParts = accessory.context.device.identifier.split(":");
+            if (accParts.length === 3) {
+              return accParts[1].split("=")[1] === type && accParts[2] === actionUuid;
             }
             return false;
           });
-          
-          // Check device config with fallback logic
+
           existingDeviceConfig = devices.find((device) => {
-            const devIdentifierParts = device.identifier.split(":");
-            if (devIdentifierParts.length === 3) {
-              const [, devTypeQuery, devActionUuid] = devIdentifierParts;
-              const devType = devTypeQuery.split("=")[1];
-              return devType === type && devActionUuid === actionUuid;
+            const devParts = device.identifier.split(":");
+            if (devParts.length === 3) {
+              return devParts[1].split("=")[1] === type && devParts[2] === actionUuid;
             }
             return false;
           });
         }
       }
-      
-      const shouldFilter = !existingDeviceConfig && !existingAccessory;
-      if (!shouldFilter) {
-        console.log(`Device ${identifier} is already configured or cached`);
-      }
-      
-      return shouldFilter;
+
+      return !existingDeviceConfig && !existingAccessory;
     });
-    let innerHTML = filtered.map((identifier) => {
-      const [loxoneName, typeDef, actionUuid] = identifier.split(":");
-      const canIdentify = !loxoneName.endsWith("Klima");
-      return `
-                    <li class="button-group" style="display: flex; align-items: center;">
-                        <strong>${loxoneName}</strong>
-                        ${
-                          canIdentify
-                            ? `<button type="button" class="btn btn-secondary btn-sm" onclick="identifyAccessory('${identifier}')">Identify</button>`
-                            : ""
-                        }
-                        <button type="button" class="btn btn-primary btn-sm" onclick="addAccessory('${identifier}')">Add</button>
-                    </li>`;
-    });
-    document.querySelector("#discoveredDevices").innerHTML =
-      innerHTML.join("\n");
+
     if (filtered.length === 0) {
-      innerHTML = `
-                    <li style="display: flex; align-items: center;">
-                        <div class="error-message" style="width: 100%;">
-                            <strong>No devices found</strong>
-                        </div>
-                    </li>`;
-      document.querySelector("#discoveredDevices").innerHTML = innerHTML;
+      document.querySelector("#discoveredDevices").innerHTML = `
+        <li style="display: flex; align-items: center;">
+          <div class="error-message" style="width: 100%;">
+            <strong>No new devices found</strong>
+          </div>
+        </li>`;
+      return;
     }
+
+    document.querySelector("#discoveredDevices").innerHTML = filtered.map((identifier) => {
+      const [loxoneName] = identifier.split(":");
+      const canIdentify = !loxoneName.endsWith("Klima");
+      const afterDot = identifier.split(" • ")[1] || identifier;
+      const colonIdx = afterDot.indexOf(":type=");
+      const deviceName = colonIdx > 0 ? afterDot.substring(0, colonIdx) : afterDot;
+      const deviceMeta = colonIdx > 0 ? afterDot.substring(colonIdx) : "";
+      return `
+        <li class="button-group" style="display: flex; align-items: center; word-break: break-all;">
+          <span><span style="color: #7c6cc4; font-size: 1.05em;">${deviceName}</span><span style="opacity: 0.5; font-size: 0.85em;">${deviceMeta}</span></span>
+          ${canIdentify
+            ? `<button type="button" class="btn btn-secondary btn-sm" onclick="identifyAccessory('${identifier}')">Identify</button>`
+            : ""
+          }
+          <button type="button" class="btn btn-primary btn-sm" onclick="addAccessory('${identifier}')">Add</button>
+        </li>`;
+    }).join("\n");
   };
+
+  // --- Init ---
 
   (async () => {
     try {
-      // get the initial config - this is an array potentially containing multiple config blocks
       const pluginConfig = await homebridge.getPluginConfig();
 
       if (pluginConfig.length) {
         const { loxoneMiniServerId, loxoneUser, loxonePassword, chromiumPath } =
           pluginConfig[0];
         document.getElementById("menuWrapper").style.display = "inline-flex";
-        document.querySelector("#loxoneMiniServerId").value =
-          loxoneMiniServerId ?? "";
+        document.querySelector("#loxoneMiniServerId").value = loxoneMiniServerId ?? "";
         document.querySelector("#loxoneUser").value = loxoneUser ?? "";
         document.querySelector("#loxonePassword").value = loxonePassword ?? "";
         document.querySelector("#chromiumPath").value = chromiumPath ?? "";
@@ -621,86 +763,30 @@
         showIntro();
       }
 
-      const {
-        fanLevels,
-        blindsTimingWindow,
-        blindsTimingUpWindow,
-        blindsTimingWindowBig,
-        blindsTimingUpWindowBig,
-        blindsTimingAwning,
-        blindsTimingUpAwning,
-        verboseLogging,
-      } = pluginConfig.length ? pluginConfig[0] : {};
+      const { fanLevels, verboseLogging } = pluginConfig.length ? pluginConfig[0] : {};
       document.querySelector("#fanLevels").value =
-        fanLevels ??
-        "0:Aus;1:Stufe 1;2:Stufe 2;3:Stufe 3;4:Stufe 4;5:Hyper Speed;6:Nacht;7:Freecolling";
-      document.querySelector("#blindsTimingWindow").value =
-        blindsTimingWindow ?? "39";
-      document.querySelector("#blindsTimingUpWindow").value =
-        blindsTimingUpWindow ?? "40";
-      document.querySelector("#blindsTimingWindowBig").value =
-        blindsTimingWindowBig ?? "56";
-      document.querySelector("#blindsTimingUpWindowBig").value =
-        blindsTimingUpWindowBig ?? "58";
-      document.querySelector("#blindsTimingAwning").value =
-        blindsTimingAwning ?? "20";
-      document.querySelector("#blindsTimingUpAwning").value =
-        blindsTimingUpAwning ?? "23";
-      document.querySelector("#verboseLogging").checked = Boolean(
-        verboseLogging
-      )
-        ? true
-        : false;
+        fanLevels ?? "0:Aus;1:Stufe 1;2:Stufe 2;3:Stufe 3;4:Stufe 4;5:Hyper Speed;6:Nacht;7:Freecolling";
+      document.querySelector("#verboseLogging").checked = Boolean(verboseLogging);
 
       document.getElementById("advancedForm").addEventListener("input", () => {
         pluginConfig[0].fanLevels = document.getElementById("fanLevels").value;
-        pluginConfig[0].blindsTimingWindow =
-          document.getElementById("blindsTimingWindow").value;
-        pluginConfig[0].blindsTimingUpWindow = document.getElementById(
-          "blindsTimingUpWindow"
-        ).value;
-        pluginConfig[0].blindsTimingWindowBig = document.getElementById(
-          "blindsTimingWindowBig"
-        ).value;
-        pluginConfig[0].blindsTimingUpWindowBig = document.getElementById(
-          "blindsTimingUpWindowBig"
-        ).value;
-        pluginConfig[0].blindsTimingAwning =
-          document.getElementById("blindsTimingAwning").value;
-        pluginConfig[0].blindsTimingUpAwning = document.getElementById(
-          "blindsTimingUpAwning"
-        ).value;
-        pluginConfig[0].verboseLogging =
-          document.getElementById("verboseLogging").checked;
-
-        // update the config
+        pluginConfig[0].verboseLogging = document.getElementById("verboseLogging").checked;
         homebridge.updatePluginConfig(pluginConfig);
       });
 
-      document
-        .getElementById("credentialsForm")
-        .addEventListener("input", () => {
-          // get the current values from the form
-          pluginConfig[0].loxoneMiniServerId =
-            document.getElementById("loxoneMiniServerId").value;
-          pluginConfig[0].loxoneUser =
-            document.getElementById("loxoneUser").value;
-          pluginConfig[0].loxonePassword =
-            document.getElementById("loxonePassword").value;
-          pluginConfig[0].chromiumPath =
-            document.getElementById("chromiumPath").value;
+      document.getElementById("credentialsForm").addEventListener("input", () => {
+        pluginConfig[0].loxoneMiniServerId = document.getElementById("loxoneMiniServerId").value;
+        pluginConfig[0].loxoneUser = document.getElementById("loxoneUser").value;
+        pluginConfig[0].loxonePassword = document.getElementById("loxonePassword").value;
+        pluginConfig[0].chromiumPath = document.getElementById("chromiumPath").value;
+        homebridge.updatePluginConfig(pluginConfig);
+      });
 
-          // update the config
-          homebridge.updatePluginConfig(pluginConfig);
-        });
-
+      // Add accessory form
       let newAccessory = {};
       document.getElementById("accessoryForm").addEventListener("input", () => {
         updateAccessoryFormState();
-        const accessoryTypeSelect = document.getElementById(
-          "accessoryTypeSelect"
-        ).value;
-        const lightOutlet = document.getElementById("lightOutlet").checked;
+        const accessoryTypeSelect = document.getElementById("accessoryTypeSelect").value;
         newAccessory = {
           name: document.getElementById("accessoryName").value,
           identifier: document.getElementById("accessoryIdentifier").value,
@@ -708,60 +794,49 @@
         };
         switch (accessoryTypeSelect) {
           case "fan":
-            newAccessory.fanBathroom =
-              document.getElementById("fanBathroom").checked;
-            newAccessory.fanAddButtons =
-              document.getElementById("fanAddButtons").value;
+            newAccessory.fanBathroom = document.getElementById("fanBathroom").checked;
+            newAccessory.fanAddButtons = document.getElementById("fanAddButtons").value;
             break;
           case "blinds":
-            newAccessory.blindsTiming =
-              document.getElementById("blindsTiming").value;
-            newAccessory.blindsMaxPosition =
-              document.getElementById("blindsMaxPosition").value;
+            newAccessory.blindsType = document.getElementById("blindsType").value;
             break;
           case "light":
-            newAccessory.lightOutlet =
-              document.getElementById("lightOutlet").checked;
-            break;
-          case "toggle":
-            // No additional configuration needed for toggle
+            newAccessory.lightOutlet = document.getElementById("lightOutlet").checked;
             break;
         }
       });
-      document
-        .querySelector("#identifyAccessoryButton")
-        .addEventListener("click", () => {
-          const identifier = document.getElementById(
-            "accessoryIdentifier"
-          ).value;
-          identifyAccessory(identifier);
-        });
-      document
-        .querySelector("#addAccessoryButton")
-        .addEventListener("click", () => {
-          if (!newAccessory.name) {
-            homebridge.toast.error(
-              "Please enter a name for the accessory",
-              "Error"
-            );
-            return;
-          }
-          // add the new accessory to the config
-          pluginConfig[0].devices = pluginConfig[0].devices ?? [];
-          pluginConfig[0].devices.push(newAccessory);
 
-          // update the config
-          homebridge.updatePluginConfig(pluginConfig);
-          cancelAccessory();
-          showDevices();
-        });
-      document
-        .querySelector("#cancelAccessoryButton")
-        .addEventListener("click", cancelAccessory);
+      document.querySelector("#identifyAccessoryButton").addEventListener("click", () => {
+        identifyAccessory(document.getElementById("accessoryIdentifier").value);
+      });
+      document.querySelector("#addAccessoryButton").addEventListener("click", () => {
+        if (!newAccessory.name) {
+          homebridge.toast.error("Please enter a name for the accessory", "Error");
+          return;
+        }
+        pluginConfig[0].devices = pluginConfig[0].devices ?? [];
+        pluginConfig[0].devices.push(newAccessory);
+        homebridge.updatePluginConfig(pluginConfig);
+        cancelAccessory();
+        showDevices();
+      });
+      document.querySelector("#cancelAccessoryButton").addEventListener("click", cancelAccessory);
 
+      // Edit form listeners
+      document.getElementById("editAccessoryTypeSelect").addEventListener("change", updateEditFormState);
+      document.getElementById("editAccessoryForm").addEventListener("input", updateEditFormState);
+      document.querySelector("#saveEditButton").addEventListener("click", saveEditDevice);
+      document.querySelector("#deleteEditButton").addEventListener("click", async () => {
+        const index = parseInt(document.getElementById("editDeviceIndex").value, 10);
+        await deleteDevice(index);
+      });
+      document.querySelector("#cancelEditButton").addEventListener("click", cancelEdit);
+
+      // Menu navigation
       menuHome.addEventListener("click", () => showAdvanced());
       menuDevices.addEventListener("click", () => showDevices());
       menuSetup.addEventListener("click", () => showCredentials());
+      menuConfigured.addEventListener("click", () => showConfigured());
     } catch (err) {
       console.error(err);
       homebridge.toast.error(err.message, "Error");

@@ -3,10 +3,22 @@ import { CharacteristicValue, PlatformAccessory, Service } from "homebridge";
 import { AccessoryBase } from "./accessoryBase.js";
 import { BlindsTilt, States } from "./loxone/types.js";
 import { LoxoneControlPlatform } from "./platform.js";
+import { AUTO_SUN_COOLDOWN } from "./settings.js";
 import { getTiltPositionFromTransforms } from "./loxone/utils/getTiltPositionFromTransforms.js";
-import { sendCommand } from "./loxone/utils/sendCommand.js";
+import { sendCommandSafe } from "./loxone/utils/sendCommand.js";
+
+// Map tilt positions to angles (-90 to 90 range for HomeKit)
+const TILT_ANGLES: Record<BlindsTilt, number> = {
+  "closed": -90,
+  "tilted": 0,
+  "open": 90,
+};
 
 export class PlatformWindowCoveringAccessory extends AccessoryBase {
+  protected override get modelName() {
+    return "Loxone Blinds";
+  }
+
   private slatService: Service | undefined;
   private tiltedSwitchService: Service | undefined;
   private openedSwitchService: Service | undefined;
@@ -19,6 +31,9 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
   public opened = false;
   public autoSunPosition = false;
   public lastAutoSunCommand = 0; // Timestamp of last command to prevent flickering
+  public onPositionUpdate: ((position: number, isStopped: boolean) => void) | null = null;
+  private targetPositionTimer: ReturnType<typeof setTimeout> | null = null;
+  public movementStartTime = 0; // Timestamp when movement command was dispatched
 
   constructor(
     public readonly platform: LoxoneControlPlatform,
@@ -26,28 +41,14 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
     public readonly identifier: string,
   ) {
     super(platform, accessory, identifier);
-    // set accessory information
-    this.accessory
-      .getService(this.platform.Service.AccessoryInformation)!
-      .setCharacteristic(
-        this.platform.Characteristic.Manufacturer,
-        "Homebrdige Loxone Puppeteer by @rvetere",
-      )
-      .setCharacteristic(this.platform.Characteristic.Model, "Loxone Blinds")
-      .setCharacteristic(this.platform.Characteristic.SerialNumber, "🤖");
 
     this.service =
       this.accessory.getService(this.platform.Service.WindowCovering) ||
       this.accessory.addService(this.platform.Service.WindowCovering);
 
-    // set the service name, this is what is displayed as the default name on the Home app
-    // in this example we are using the name we stored in the `accessory.context` in the `discoverDevices` method.
-    this.service.setCharacteristic(
-      this.platform.Characteristic.Name,
-      accessory.context.device.name,
-    );
+    this.setServiceName(this.service, accessory.context.device.name);
 
-    // create handlers for required characteristics
+    // Position characteristics
     this.service
       .getCharacteristic(this.platform.Characteristic.CurrentPosition)
       .onGet(this.getPosition.bind(this));
@@ -62,9 +63,19 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
       .onSet(this.setTargetPosition.bind(this));
 
     const { device } = accessory.context;
-    const isAwning = device.blindsTiming?.includes("awning");
+    const isAwning = device.blindsType === "awning" || device.blindsTiming?.includes("awning");
     if (!isAwning) {
-      // Add an additional service for "Slats" characteristics
+      // Add tilt angle directly on the WindowCovering service (gives a slider in HomeKit)
+      this.service
+        .getCharacteristic(this.platform.Characteristic.CurrentHorizontalTiltAngle)
+        .onGet(this.getCurrentTiltAngle.bind(this));
+
+      this.service
+        .getCharacteristic(this.platform.Characteristic.TargetHorizontalTiltAngle)
+        .onGet(this.getCurrentTiltAngle.bind(this))
+        .onSet(this.setTargetTiltAngle.bind(this));
+
+      // Keep the Slats service for additional detail
       this.slatService =
         this.accessory.getService(`${device.name} Slats`) ||
         this.accessory.addService(
@@ -72,6 +83,7 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
           `${device.name} Slats`,
           `${device.room}-${device.name}-${device.type}-slats`,
         );
+      this.setServiceName(this.slatService, "Slats");
       this.slatService
         .getCharacteristic(this.platform.Characteristic.CurrentSlatState)
         .onGet(this.getCurrentSlatState.bind(this));
@@ -82,9 +94,9 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
 
       this.slatService
         .getCharacteristic(this.platform.Characteristic.CurrentTiltAngle)
-        .onGet(this.getCurrentTiltAngle.bind(this));
+        .onGet(this.getCurrentSlatTiltAngle.bind(this));
 
-      // Add an additional service buttons for "finalTiltPosition"
+      // Tilted/Opened switch buttons for tilt presets
       this.tiltedSwitchService =
         this.accessory.getService(`${device.name} Tilted`) ||
         this.accessory.addService(
@@ -92,6 +104,7 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
           `${device.name} Tilted`,
           `${device.room}-${device.name}-${device.type}-tilted`,
         );
+      this.setServiceName(this.tiltedSwitchService, "Tilted");
 
       this.tiltedSwitchService
         .getCharacteristic(this.platform.Characteristic.On)
@@ -105,16 +118,15 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
           `${device.name} Opened`,
           `${device.room}-${device.name}-${device.type}-opened`,
         );
+      this.setServiceName(this.openedSwitchService, "Opened");
 
       this.openedSwitchService
         .getCharacteristic(this.platform.Characteristic.On)
         .onSet(this.setOpenedOn.bind(this))
         .onGet(this.getOpenedOn.bind(this));
-
     }
 
     // Shade and Auto Sun Position are available for ALL window coverings (including awnings)
-    // Add an additional service button for "Shade" - stateless command
     this.shadeSwitchService =
       this.accessory.getService(`${device.name} Shade`) ||
       this.accessory.addService(
@@ -122,13 +134,14 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
         `${device.name} Shade`,
         `${device.room}-${device.name}-${device.type}-shade`,
       );
+    this.setServiceName(this.shadeSwitchService, "Shade");
 
     this.shadeSwitchService
       .getCharacteristic(this.platform.Characteristic.On)
       .onSet(this.setShadeOn.bind(this))
       .onGet(this.getShadeOn.bind(this));
 
-    // Add an additional service button for "Auto Sun Position" - toggles automation
+    // Auto Sun Position - toggles automation
     this.autoSunSwitchService =
       this.accessory.getService(`${device.name} Auto Sun Position`) ||
       this.accessory.addService(
@@ -136,6 +149,7 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
         `${device.name} Auto Sun Position`,
         `${device.room}-${device.name}-${device.type}-autosun`,
       );
+    this.setServiceName(this.autoSunSwitchService, "Auto Sun");
 
     this.autoSunSwitchService
       .getCharacteristic(this.platform.Characteristic.On)
@@ -151,6 +165,7 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
           `${device.name} Fully In`,
           `${device.room}-${device.name}-${device.type}-fullyin`,
         );
+      this.setServiceName(this.fullyInSwitchService, "Fully In");
 
       this.fullyInSwitchService
         .getCharacteristic(this.platform.Characteristic.On)
@@ -164,6 +179,7 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
           `${device.name} Fully Out`,
           `${device.room}-${device.name}-${device.type}-fullyout`,
         );
+      this.setServiceName(this.fullyOutSwitchService, "Fully Out");
 
       this.fullyOutSwitchService
         .getCharacteristic(this.platform.Characteristic.On)
@@ -173,6 +189,74 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
 
     this.resetTiltPositions = this.resetTiltPositions.bind(this);
     this.handleSetTargetPosition = this.handleSetTargetPosition.bind(this);
+  }
+
+  // --- Tilt control ---
+
+  private tiltPositionToAngle(tiltPosition: BlindsTilt): number {
+    return TILT_ANGLES[tiltPosition] ?? TILT_ANGLES.closed;
+  }
+
+  getCurrentTiltAngle() {
+    return this.tiltPositionToAngle(this.states.TiltPosition || "closed");
+  }
+
+  // Slats service uses 0-90 range
+  getCurrentSlatTiltAngle() {
+    switch (this.states.TiltPosition) {
+      default:
+      case "closed":
+        return 0;
+      case "tilted":
+        return 45;
+      case "open":
+        return 90;
+    }
+  }
+
+  async setTargetTiltAngle(value: CharacteristicValue) {
+    const angle = value as number;
+    const { name } = this.accessory.context.device;
+
+    // Map angle ranges to tilt positions:
+    // -90 to -30: closed, -30 to 30: tilted, 30 to 90: open
+    let targetTilt: BlindsTilt;
+    if (angle <= -30) {
+      targetTilt = "closed";
+    } else if (angle >= 30) {
+      targetTilt = "open";
+    } else {
+      targetTilt = "tilted";
+    }
+
+    if (targetTilt === this.states.TiltPosition) {
+      return;
+    }
+
+    this.platform.logger.info(
+      `🔄 ${name}: Setting tilt from "${this.states.TiltPosition}" to "${targetTilt}" (angle: ${angle})`,
+    );
+
+    // Update the tilted/opened switches to reflect the tilt target
+    this.tilted = targetTilt === "tilted";
+    this.opened = targetTilt === "open";
+    this.tiltedSwitchService?.updateCharacteristic(
+      this.platform.Characteristic.On,
+      this.tilted,
+    );
+    this.openedSwitchService?.updateCharacteristic(
+      this.platform.Characteristic.On,
+      this.opened,
+    );
+
+    // Use the blinds controller to move to current position with new tilt
+    const currentPosition = this.states.Position || 0;
+    if (currentPosition > 0) {
+      this.platform.blindsController.moveBlindsToPosition({
+        platformAccessory: this,
+        value: currentPosition,
+      });
+    }
   }
 
   setTiltedOn(value: CharacteristicValue) {
@@ -191,14 +275,24 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
     return this.opened;
   }
 
+  getCurrentSlatState() {
+    return this.states.TiltPosition === "closed"
+      ? this.platform.Characteristic.CurrentSlatState.FIXED
+      : this.platform.Characteristic.CurrentSlatState.SWINGING;
+  }
+
+  getSlatType() {
+    return this.platform.Characteristic.SlatType.HORIZONTAL;
+  }
+
+  // --- Shade & Awning buttons ---
+
   async setShadeOn(value: CharacteristicValue) {
     if (value) {
-      // Send shade command immediately when turned on
       const { name } = this.accessory.context.device;
       this.platform.logger.info(`🌤️ ${name}: Sending shade command`);
-      await sendCommand(this.platform, this.identifier, ["shade"]);
-      
-      // Immediately turn the switch back off since this is a momentary action
+      await sendCommandSafe(this.platform, this.identifier, ["shade"]);
+
       setTimeout(() => {
         this.shadeSwitchService?.updateCharacteristic(
           this.platform.Characteristic.On,
@@ -209,7 +303,6 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
   }
 
   getShadeOn(): CharacteristicValue {
-    // Always return false since this is a momentary button
     return false;
   }
 
@@ -217,7 +310,7 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
     if (value) {
       const { name } = this.accessory.context.device;
       this.platform.logger.info(`⬆️ ${name}: Sending Fully In (retract) command`);
-      await sendCommand(this.platform, this.identifier, ["FullUp"]);
+      await sendCommandSafe(this.platform, this.identifier, ["FullUp"]);
       setTimeout(() => {
         this.fullyInSwitchService?.updateCharacteristic(
           this.platform.Characteristic.On,
@@ -231,7 +324,7 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
     if (value) {
       const { name } = this.accessory.context.device;
       this.platform.logger.info(`⬇️ ${name}: Sending Fully Out (extend) command`);
-      await sendCommand(this.platform, this.identifier, ["FullDown"]);
+      await sendCommandSafe(this.platform, this.identifier, ["FullDown"]);
       setTimeout(() => {
         this.fullyOutSwitchService?.updateCharacteristic(
           this.platform.Characteristic.On,
@@ -241,25 +334,21 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
     }
   }
 
+  // --- Auto Sun Position ---
+
   async setAutoSunOn(value: CharacteristicValue) {
     const { name } = this.accessory.context.device;
     this.platform.logger.info(
-      `☀️ ${name}: Auto Sun Position ${value ? "ON" : "OFF"} - SETTER CALLED!`,
+      `☀️ ${name}: Auto Sun Position ${value ? "ON" : "OFF"}`,
     );
 
-    // Immediately update local state to prevent flickering
     this.autoSunPosition = value as boolean;
-    // Only set cooldown for individual user commands, not central automation commands
     this.lastAutoSunCommand = Date.now();
 
     if (value) {
-      // Turning ON: send auto command to enable sun position automation
-      this.platform.logger.info(`☀️ ${name}: Sending auto command to enable sun position automation`);
-      await sendCommand(this.platform, this.identifier, ["auto"]);
+      await sendCommandSafe(this.platform, this.identifier, ["auto"]);
     } else {
-      // Turning OFF: send NoAuto command to disable sun position automation
-      this.platform.logger.info(`☀️ ${name}: Sending NoAuto command to disable sun position automation`);
-      await sendCommand(this.platform, this.identifier, ["NoAuto"]);
+      await sendCommandSafe(this.platform, this.identifier, ["NoAuto"]);
     }
   }
 
@@ -267,66 +356,40 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
     return this.autoSunPosition;
   }
 
-  // Reset cooldown to allow immediate state updates (used when central automation changes all blinds)
   resetAutoSunCooldown() {
     this.lastAutoSunCommand = 0;
   }
 
-  getCurrentSlatState() {
-    return this.states.TiltPosition === "closed"
-      ? this.platform.Characteristic.CurrentSlatState.FIXED
-      : this.platform.Characteristic.CurrentSlatState.SWINGING;
-  }
-
-  getSlatType() {
-    return this.platform.Characteristic.SlatType.HORIZONTAL;
-  }
-
-  getCurrentTiltAngle() {
-    switch (this.states.TiltPosition) {
-      default:
-      case "closed":
-        return 0;
-      case "tilted":
-        return 45;
-      case "open":
-        return 90;
-    }
-  }
+  // --- Position getters ---
 
   getPosition() {
-    const position = this.states?.Position || 0;
-    return position;
+    return this.states?.Position || 0;
   }
 
   getPositionState() {
-    const state =
-      this.states?.PositionState ||
+    return this.states?.PositionState ||
       this.platform.Characteristic.PositionState.STOPPED;
-
-    return state;
   }
 
   getTargetPosition() {
-    const targetPosition = this.states?.TargetPosition || 0;
-    return targetPosition;
+    return this.states?.TargetPosition || 0;
   }
 
   async setTargetPosition(value: CharacteristicValue) {
-    setTimeout(
-      (() => {
-        this.handleSetTargetPosition(value as number);
-      }).bind(this),
-      300,
-    );
+    if (this.targetPositionTimer) {
+      clearTimeout(this.targetPositionTimer);
+    }
+    this.targetPositionTimer = setTimeout(() => {
+      this.targetPositionTimer = null;
+      this.movementStartTime = Date.now();
+      this.handleSetTargetPosition(value as number);
+    }, 300);
   }
 
   async handleSetTargetPosition(value: number) {
     const actualTilt = this.opened ? "open" : this.tilted ? "tilted" : "closed";
     const tilt = (value > 0 ? actualTilt : "closed") as BlindsTilt;
 
-    // if the difference to the current position is not bigger than 6, just ignore the command
-    // -> but only if the tilt is not changed
     if (
       Math.abs(value - this.states.Position) < 6 &&
       tilt === this.states.TiltPosition
@@ -365,6 +428,8 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
     }
   };
 
+  // --- State updates from Loxone ---
+
   setState = (givenValues: States) => {
     const newValues = Array.isArray(givenValues) ? givenValues : [givenValues];
     const newStates: States = {
@@ -374,9 +439,13 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
     };
 
     const newValue = Array.isArray(newValues) ? newValues[0] : newValues;
+    if (!newValue) {
+      return;
+    }
 
-    const thirstValue = newValue[Object.keys(newValue)[0]];
-    const secondValue = newValue[Object.keys(newValue)[1]];
+    const keys = Object.keys(newValue);
+    const thirstValue = keys.length > 0 ? newValue[keys[0]] : undefined;
+    const secondValue = keys.length > 1 ? newValue[keys[1]] : undefined;
     const isMoving =
       newValue.isMoving || thirstValue === 1 || secondValue === 1;
     const movingDirection = !isMoving
@@ -401,8 +470,8 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
         newStates.Position = Position;
       }
     } else {
-      const thirdValue = newValue[Object.keys(newValue)[2]];
-      Position = Math.round(thirdValue * 100);
+      const thirdValue = keys.length > 2 ? newValue[keys[2]] : 0;
+      Position = Math.round((thirdValue ?? 0) * 100);
       if (!isNaN(Position)) {
         newStates.Position = Position;
         newStates.TargetPosition = Position;
@@ -436,6 +505,14 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
       );
     }
 
+    // Don't update TargetPosition from Loxone while:
+    // - user is actively scrubbing the slider (debounce timer pending)
+    // - movement just started and hasn't stabilized yet (first 700ms)
+    const isStabilizing = this.movementStartTime > 0 && (Date.now() - this.movementStartTime) < 700;
+    if (this.targetPositionTimer || isStabilizing) {
+      newStates.TargetPosition = this.states.TargetPosition;
+    }
+
     if (this.states.TargetPosition !== newStates.TargetPosition) {
       anyStateChanged = true;
       this.service?.updateCharacteristic(
@@ -444,23 +521,38 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
       );
     }
 
-    // Update slat tilt angle and state when tilt position changes
-    if (this.slatService && this.states.TiltPosition !== newStates.TiltPosition) {
+    // Update tilt on both the WindowCovering service and the Slats service
+    if (this.states.TiltPosition !== newStates.TiltPosition) {
       anyStateChanged = true;
-      const tiltAngle = newStates.TiltPosition === "tilted" ? 45
-        : newStates.TiltPosition === "open" ? 90 : 0;
-      const slatState = newStates.TiltPosition === "closed"
-        ? this.platform.Characteristic.CurrentSlatState.FIXED
-        : this.platform.Characteristic.CurrentSlatState.SWINGING;
+      const tiltAngle = this.tiltPositionToAngle(newStates.TiltPosition);
 
-      this.slatService.updateCharacteristic(
-        this.platform.Characteristic.CurrentTiltAngle,
+      // Update WindowCovering tilt (slider in blind control)
+      this.service?.updateCharacteristic(
+        this.platform.Characteristic.CurrentHorizontalTiltAngle,
         tiltAngle,
       );
-      this.slatService.updateCharacteristic(
-        this.platform.Characteristic.CurrentSlatState,
-        slatState,
+      this.service?.updateCharacteristic(
+        this.platform.Characteristic.TargetHorizontalTiltAngle,
+        tiltAngle,
       );
+
+      // Update Slats service
+      if (this.slatService) {
+        const slatAngle = newStates.TiltPosition === "tilted" ? 45
+          : newStates.TiltPosition === "open" ? 90 : 0;
+        const slatState = newStates.TiltPosition === "closed"
+          ? this.platform.Characteristic.CurrentSlatState.FIXED
+          : this.platform.Characteristic.CurrentSlatState.SWINGING;
+
+        this.slatService.updateCharacteristic(
+          this.platform.Characteristic.CurrentTiltAngle,
+          slatAngle,
+        );
+        this.slatService.updateCharacteristic(
+          this.platform.Characteristic.CurrentSlatState,
+          slatState,
+        );
+      }
     }
 
     if (anyStateChanged) {
@@ -479,17 +571,25 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
         })}`,
       );
     }
-    
+
     this.states = newStates;
-    
+
+    // Notify blinds controller of position update (for state-based positioning)
+    if (this.onPositionUpdate) {
+      const isStopped = newStates.PositionState === this.platform.Characteristic.PositionState.STOPPED;
+      this.onPositionUpdate(newStates.Position ?? 0, isStopped);
+    }
+
     // Update Auto Sun Position state based on automation text messages
+    this.updateAutoSunState(givenValues);
+  };
+
+  private updateAutoSunState(givenValues: States) {
     const checkAutomationState = (stateObj: Record<string, unknown>): { hasAutomationText: boolean; isActive: boolean } => {
-      // Look for text properties that contain automation status
       for (const value of Object.values(stateObj)) {
         if (typeof value === "object" && value !== null && "text" in value) {
           const text = (value as { text: string }).text;
           if (text && text.includes("Automatik Beschattung")) {
-            // Check if automation is active (contains "aktiv") or deactivated ("deaktiviert")
             const isActive = text.includes("aktiv") && !text.includes("deaktiviert");
             this.platform.logger.debug(
               `☀️ ${this.accessory.context.device.name}: Automation text: "${text}", interpreted as: ${isActive ? "ACTIVE" : "INACTIVE"}`,
@@ -501,55 +601,33 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
       return { hasAutomationText: false, isActive: false };
     };
 
-    // Don't update from WebSocket for 1 second after user command to prevent flickering
-    // Only apply this cooldown if this specific blind had a recent user command
     const timeSinceLastCommand = Date.now() - this.lastAutoSunCommand;
-    if (this.lastAutoSunCommand > 0 && timeSinceLastCommand < 1000) {
+    if (this.lastAutoSunCommand > 0 && timeSinceLastCommand < AUTO_SUN_COOLDOWN) {
       this.platform.logger.debug(
-        `☀️ ${this.accessory.context.device.name}: Ignoring automation state update for ${1000 - timeSinceLastCommand}ms after user command`,
+        `☀️ ${this.accessory.context.device.name}: Ignoring automation state update for ${AUTO_SUN_COOLDOWN - timeSinceLastCommand}ms after user command`,
       );
       return;
     }
 
-    if (Array.isArray(givenValues)) {
-      // For arrays (multiple blind states), check the first one
-      const firstState = givenValues[0];
-      const automationResult = checkAutomationState(firstState);
-      
-      // Only update if we found automation text, otherwise preserve current state
-      if (automationResult.hasAutomationText && this.autoSunPosition !== automationResult.isActive) {
-        this.autoSunPosition = automationResult.isActive;
-        this.autoSunSwitchService?.updateCharacteristic(
-          this.platform.Characteristic.On,
-          this.autoSunPosition,
-        );
-        this.platform.logger.info(
-          `☀️ ${this.accessory.context.device.name}: Auto Sun Position updated to ${this.autoSunPosition ? "ON" : "OFF"}`,
-        );
-      } else if (!automationResult.hasAutomationText) {
-        this.platform.logger.debug(
-          `☀️ ${this.accessory.context.device.name}: No automation text found, preserving current state: ${this.autoSunPosition ? "ON" : "OFF"}`,
-        );
-      }
-    } else if (typeof givenValues === "object" && givenValues !== null) {
-      // For single object states
-      const automationResult = checkAutomationState(givenValues);
-      
-      // Only update if we found automation text, otherwise preserve current state
-      if (automationResult.hasAutomationText && this.autoSunPosition !== automationResult.isActive) {
-        this.autoSunPosition = automationResult.isActive;
-        this.autoSunSwitchService?.updateCharacteristic(
-          this.platform.Characteristic.On,
-          this.autoSunPosition,
-        );
-        this.platform.logger.info(
-          `☀️ ${this.accessory.context.device.name}: Auto Sun Position updated to ${this.autoSunPosition ? "ON" : "OFF"}`,
-        );
-      } else if (!automationResult.hasAutomationText) {
-        this.platform.logger.debug(
-          `☀️ ${this.accessory.context.device.name}: No automation text found, preserving current state: ${this.autoSunPosition ? "ON" : "OFF"}`,
-        );
-      }
+    const stateToCheck = Array.isArray(givenValues) ? givenValues[0] : givenValues;
+    if (!stateToCheck || typeof stateToCheck !== "object") {
+      return;
     }
-  };
+
+    const automationResult = checkAutomationState(stateToCheck);
+    if (automationResult.hasAutomationText && this.autoSunPosition !== automationResult.isActive) {
+      this.autoSunPosition = automationResult.isActive;
+      this.autoSunSwitchService?.updateCharacteristic(
+        this.platform.Characteristic.On,
+        this.autoSunPosition,
+      );
+      this.platform.logger.info(
+        `☀️ ${this.accessory.context.device.name}: Auto Sun Position updated to ${this.autoSunPosition ? "ON" : "OFF"}`,
+      );
+    } else if (!automationResult.hasAutomationText) {
+      this.platform.logger.debug(
+        `☀️ ${this.accessory.context.device.name}: No automation text found, preserving current state: ${this.autoSunPosition ? "ON" : "OFF"}`,
+      );
+    }
+  }
 }

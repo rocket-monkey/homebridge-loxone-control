@@ -47,3 +47,13 @@ export const sendCommand = async (
     }, ...args);
   return jsError;
 };
+
+export const sendCommandSafe = async (
+  platform: LoxoneControlPlatform,
+  ...args: any[]
+) => {
+  const jsError = await sendCommand(platform, ...args);
+  if (jsError) {
+    platform.logger.error(`Error in sendCommand: ${jsError}`);
+  }
+};

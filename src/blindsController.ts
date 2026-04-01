@@ -1,12 +1,21 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable indent */
-import { BlindsTilt, BlindsTimingVariant, BlindsType } from "./loxone/types.js";
-import { getBlindsTiming } from "./loxone/utils/getBlindsTiming.js";
-import { sendCommand } from "./loxone/utils/sendCommand.js";
+import { BlindsTilt, BlindsType } from "./loxone/types.js";
+import { sendCommandSafe } from "./loxone/utils/sendCommand.js";
 import { sleep } from "./loxone/utils/sleep.js";
-import { toPositive } from "./loxone/utils/toPositive.js";
+import { parseIdentifier } from "./loxone/utils/parseIdentifier.js";
 import { LoxoneControlPlatform } from "./platform.js";
 import { PlatformWindowCoveringAccessory } from "./platformWindowCoveringAccessory.js";
+import {
+  BLINDS_DEBOUNCE_DELAY,
+  BLINDS_COMMAND_STAGGER_DELAY,
+  BLINDS_STOP_SETTLE_DELAY,
+  BLINDS_FINAL_POSITION_SETTLE,
+  BLINDS_TILT_DELAY_SHORT,
+  BLINDS_TILT_DELAY_MEDIUM,
+  BLINDS_TILT_DELAY_LONG,
+  BLINDS_POSITION_TOLERANCE,
+  BLINDS_POSITION_TIMEOUT,
+} from "./settings.js";
 
 interface MoveBlindsToPositionParams {
   value: number;
@@ -20,23 +29,26 @@ interface MoveBlindsToFinalPositionParams {
   blindsType: BlindsType;
 }
 
+interface ActiveMovement {
+  safetyTimer: ReturnType<typeof setTimeout>;
+  resolve: () => void;
+}
+
 export class BlindsController {
-  private activeTimers: Map<string, NodeJS.Timeout>;
+  private activeMovements: Map<string, ActiveMovement> = new Map();
 
   private runCommands: MoveBlindsToPositionParams[] = [];
-  private runDebounceTimer: NodeJS.Timeout | null = null;
+  private runDebounceTimer: ReturnType<typeof setTimeout> | null = null;
   public commandsExecuting = false;
 
   constructor(public readonly platform: LoxoneControlPlatform) {
-    this.activeTimers = new Map<string, NodeJS.Timeout>();
     this.moveBlindsToPosition = this.moveBlindsToPosition.bind(this);
     this.moveBlindsToPositionNow = this.moveBlindsToPositionNow.bind(this);
     this.moveBlindsToFinalPosition = this.moveBlindsToFinalPosition.bind(this);
   }
 
   moveBlindsToPosition = async (params: MoveBlindsToPositionParams) => {
-    return new Promise((resolve: (delays: number[]) => void) => {
-      const debounceDelay = 500;
+    return new Promise<void>((resolve) => {
       this.runCommands.push(params);
 
       if (this.runDebounceTimer) {
@@ -44,47 +56,121 @@ export class BlindsController {
       }
       this.runDebounceTimer = setTimeout(() => {
         this.platform.logger.debug(
-          `🤖 Nothing received for ${debounceDelay}ms, collected commands: [${this.runCommands.map(
+          `🤖 Nothing received for ${BLINDS_DEBOUNCE_DELAY}ms, collected commands: [${this.runCommands.map(
             (rc) => rc.value,
           )}]`,
         );
         this.runDebounceTimer = null;
         this.commandsExecuting = true;
-        const promises = this.runCommands.map(async (command, index) => {
-          const additionalDelay = 600;
-          const delay = index * additionalDelay;
-          const movingDelay = await this.moveBlindsToPositionNow(
-            command,
-            delay,
-          );
-          this.resetTiltButtonsAfterDelay(
-            command.platformAccessory,
-            movingDelay,
-          );
-          return movingDelay;
-        });
-        Promise.all(promises).then((delays) => {
-          this.platform.logger.debug(
-            `✅ All commands executed!, collected delays: ${JSON.stringify(
-              delays.flat(),
-            )}`,
-          );
-          this.runCommands = [];
-          this.commandsExecuting = false;
-          resolve(delays.flat() as unknown as number[]);
-        });
+        const commands = [...this.runCommands];
         this.runCommands = [];
-      }, debounceDelay);
+
+        const promises = commands.map(async (command, index) => {
+          const delay = index * BLINDS_COMMAND_STAGGER_DELAY;
+          await this.moveBlindsToPositionNow(command, delay);
+          command.platformAccessory.resetTiltPositions();
+        });
+        Promise.all(promises).then(() => {
+          this.platform.logger.debug("✅ All blind commands completed");
+          this.commandsExecuting = false;
+          resolve();
+        }).catch((error) => {
+          this.platform.logger.error(`Error executing blind commands: ${error}`);
+          this.commandsExecuting = false;
+          resolve();
+        });
+      }, BLINDS_DEBOUNCE_DELAY);
     });
   };
 
-  resetTiltButtonsAfterDelay = async (
-    accessory: PlatformWindowCoveringAccessory,
-    delay: number,
-  ) => {
-    await sleep(delay + 1000);
-    accessory.resetTiltPositions();
-  };
+  private cancelActiveMovement(actionUuid: string, platformAccessory: PlatformWindowCoveringAccessory) {
+    const existing = this.activeMovements.get(actionUuid);
+    if (existing) {
+      clearTimeout(existing.safetyTimer);
+      platformAccessory.onPositionUpdate = null;
+      platformAccessory.movementStartTime = 0;
+      this.activeMovements.delete(actionUuid);
+      // Resolve the dangling watchPosition promise so it doesn't block
+      existing.resolve();
+      this.platform.logger.debug(` > Cancelled active movement for "${actionUuid}"`);
+    }
+  }
+
+  private watchPosition(
+    platformAccessory: PlatformWindowCoveringAccessory,
+    targetPosition: number,
+    isMovingDown: boolean,
+    tilt: BlindsTilt,
+    blindsType: BlindsType,
+  ): Promise<void> {
+    return new Promise((resolve) => {
+      const { actionUuid } = parseIdentifier(platformAccessory.identifier);
+      const { name } = platformAccessory.accessory.context.device;
+
+      // Cancel any existing movement for this blind
+      this.cancelActiveMovement(actionUuid, platformAccessory);
+
+      const cleanup = () => {
+        platformAccessory.onPositionUpdate = null;
+        platformAccessory.movementStartTime = 0;
+        const movement = this.activeMovements.get(actionUuid);
+        if (movement) {
+          clearTimeout(movement.safetyTimer);
+        }
+        this.activeMovements.delete(actionUuid);
+      };
+
+      const onReached = async () => {
+        cleanup();
+        this.platform.logger.info(
+          `🎯 "${name}" reached target position ${targetPosition}%`,
+        );
+        await this.moveBlindsToFinalPosition({
+          platformAccessory, isMovingDown, tilt, blindsType,
+        });
+        resolve();
+      };
+
+      const safetyTimer = setTimeout(async () => {
+        this.platform.logger.warn(
+          `⏰ Safety timeout: "${name}" did not reach target ${targetPosition}% within ${BLINDS_POSITION_TIMEOUT / 1000}s`,
+        );
+        cleanup();
+        await this.moveBlindsToFinalPosition({
+          platformAccessory, isMovingDown, tilt, blindsType,
+        });
+        resolve();
+      }, BLINDS_POSITION_TIMEOUT);
+
+      platformAccessory.onPositionUpdate = (position: number, isStopped: boolean) => {
+        // Check if we've reached the target (within tolerance)
+        if (Math.abs(position - targetPosition) <= BLINDS_POSITION_TOLERANCE) {
+          onReached();
+        } else if (isStopped) {
+          // Blind stopped before reaching target (obstacle, manual stop, etc.)
+          this.platform.logger.warn(
+            `⚠️ "${name}" stopped at ${position}%, target was ${targetPosition}%`,
+          );
+          cleanup();
+          resolve();
+        } else if (isMovingDown && position > targetPosition + BLINDS_POSITION_TOLERANCE) {
+          // Overshot while moving down
+          this.platform.logger.debug(
+            `🎯 "${name}" overshot target (at ${position}%, target ${targetPosition}%), stopping`,
+          );
+          onReached();
+        } else if (!isMovingDown && position < targetPosition - BLINDS_POSITION_TOLERANCE) {
+          // Overshot while moving up
+          this.platform.logger.debug(
+            `🎯 "${name}" overshot target (at ${position}%, target ${targetPosition}%), stopping`,
+          );
+          onReached();
+        }
+      };
+
+      this.activeMovements.set(actionUuid, { safetyTimer, resolve });
+    });
+  }
 
   moveBlindsToPositionNow = async (
     { value, platformAccessory }: MoveBlindsToPositionParams,
@@ -99,135 +185,73 @@ export class BlindsController {
         : "closed";
       const tilt = (value > 0 ? actualTilt : "closed") as BlindsTilt;
       const { accessory, identifier, states } = platformAccessory;
-      const [_searchDescription, _typeQuery, actionUuid] =
-        identifier.split(":");
+      const { actionUuid } = parseIdentifier(identifier);
+      const { name } = accessory.context.device;
 
-      if (this.activeTimers.has(actionUuid)) {
-        this.platform.logger.debug(
-          ` > 🕰️ Clear active timer for "${actionUuid}"`,
-        );
-        clearTimeout(this.activeTimers.get(actionUuid));
-        this.activeTimers.delete(actionUuid);
-      } else {
-        this.platform.logger.debug(
-          ` > 🕰️ No active timer for "${actionUuid}", ${JSON.stringify(
-            this.activeTimers.get(actionUuid),
-          )}`,
-        );
-      }
+      // Cancel any existing movement
+      this.cancelActiveMovement(actionUuid, platformAccessory);
 
-      let delay = 0;
-      const { blindsTiming, blindsMaxPosition } = accessory.context.device;
-      const maxPosition = parseInt(blindsMaxPosition || "100", 10);
-      const timing = isNaN(parseInt(blindsTiming, 10))
-        ? getBlindsTiming(
-            blindsTiming as BlindsTimingVariant,
-            this.platform.config,
-          )
-        : parseInt(blindsTiming, 10);
-      const timingUp = getBlindsTiming(
-        blindsTiming as BlindsTimingVariant,
-        this.platform.config,
-        "up",
-      );
+      const blindsType: BlindsType =
+        accessory.context.device.blindsType === "awning" ||
+        accessory.context.device.blindsTiming?.includes("awning")
+          ? "awning"
+          : "blinds";
 
-      const blindsType: BlindsType = blindsTiming?.includes("awning")
-        ? "awning"
-        : "blinds";
-
-      if (maxPosition < 100) {
-        value = Math.round((value * maxPosition) / 100);
-      }
-      if (value > maxPosition) {
-        value = maxPosition;
-      }
-
-      const steps = value - states.Position;
+      const steps = value - (states.Position ?? 0);
       const isMovingDown = steps > 0;
-
-      const isPositionStateChanged = isMovingDown
-        ? states.PositionState !==
-          this.platform.Characteristic.PositionState.INCREASING
-        : states.PositionState !==
-          this.platform.Characteristic.PositionState.DECREASING;
 
       const isAlreadyRunning =
         states.PositionState !==
         this.platform.Characteristic.PositionState.STOPPED;
-      if (isAlreadyRunning && isPositionStateChanged) {
+
+      // If blind is already moving, any command will stop it first (hardware behavior).
+      // So we send a stop command, wait for it to settle, then send the new movement.
+      if (isAlreadyRunning) {
         this.platform.logger.debug(
-          `   🔥 Blinds "${
-            accessory.context.device.name
-          }" are already running and will have a new direction, stop them! ${JSON.stringify(
-            { isMovingDown, PositionState: states.PositionState },
-          )}`,
+          `   🔥 Blinds "${name}" are already moving, stopping first before new command`,
         );
-        await sendCommand(this.platform, identifier, ["FullDown"]);
-        await sleep(500);
-      } else if (isAlreadyRunning && !isPositionStateChanged) {
-        this.platform.logger.debug(
-          `   👌 Blinds "${accessory.context.device.name}" are already running in the correct direction, do not stop them!`,
-        );
+        await sendCommandSafe(this.platform, identifier, [isMovingDown ? "FullDown" : "FullUp"]);
+        await sleep(BLINDS_STOP_SETTLE_DELAY);
       }
 
-      const stepsToTarget = toPositive(steps);
+      const stepsToTarget = Math.abs(steps);
       const targetIsFullyDownOrUp =
         value === 0 || (value === 100 && tilt === "closed");
 
       if (stepsToTarget > 0) {
-        if (!targetIsFullyDownOrUp) {
-          // calculate exact delay to reach "stepsToTarget"
-          delay = Math.floor(
-            stepsToTarget * ((isMovingDown ? timing : timingUp) / 100) * 1000,
-          );
-        }
-        const { name } = accessory.context.device;
         this.platform.logger.info(
-          `🕹️ Move jalousie "${name}" from ${states.Position}% to ${value}% (${tilt}), wait ${delay}ms to reach position`,
+          `🕹️ Move jalousie "${name}" from ${states.Position}% to ${value}% (${tilt})`,
         );
 
         states.TargetPosition = value;
-        if (!isAlreadyRunning) {
-          const jsError = await this.sendMoveJalousieCommand(
-            platformAccessory,
-            true,
-            isMovingDown ? "FullDown" : "FullUp",
-          );
+        await this.sendMoveJalousieCommand(
+          platformAccessory,
+          true,
+          isMovingDown ? "FullDown" : "FullUp",
+        );
 
-          if (jsError) {
-            this.platform.logger.error(
-              `Error in sendCommand: ${jsError as string}`,
-            );
-          }
-        }
-
-        if (delay > 0) {
-          const newTimer = setTimeout(
-            (() => {
-              this.moveBlindsToFinalPosition({
-                platformAccessory,
-                isMovingDown,
-                tilt,
-                blindsType,
-              });
-              this.activeTimers.delete(actionUuid);
-            }).bind(this),
-            delay,
-          );
-          this.activeTimers.set(actionUuid, newTimer);
+        if (targetIsFullyDownOrUp) {
+          // For fully up/down: Loxone stops at mechanical limits automatically
+          // Just wait for the state to report stopped
           this.platform.logger.debug(
-            ` > 🕰️ Set timer for "${actionUuid}" to ${delay}ms, ${JSON.stringify(
-              this.activeTimers.has(actionUuid),
-            )}`,
+            `   📍 Target is fully ${value === 0 ? "up" : "down"}, Loxone will stop at limit`,
+          );
+          await this.watchPosition(
+            platformAccessory, value, isMovingDown, tilt, blindsType,
+          );
+        } else {
+          // Watch position updates until target is reached
+          await this.watchPosition(
+            platformAccessory, value, isMovingDown, tilt, blindsType,
           );
         }
       } else {
-        // check if blinds are in correct slat tilt angle position
+        // No position change needed, check if tilt needs adjustment
         if (tilt !== states.TiltPosition) {
           this.platform.logger.debug(
-            `   🕹️ Move slat tilt angle only, from "${states.TargetPosition}" to "${tilt}"`,
+            `   🕹️ Move slat tilt angle only, from "${states.TiltPosition}" to "${tilt}"`,
           );
-          this.moveBlindsToFinalPosition({
+          await this.moveBlindsToFinalPosition({
             platformAccessory,
             isMovingDown: true,
             tilt,
@@ -239,11 +263,8 @@ export class BlindsController {
           );
         }
       }
-
-      return delay;
     } catch (e) {
       this.platform.logger.error(`Error in moveBlindsToPositionNow: ${e}`);
-      return 0;
     }
   };
 
@@ -255,7 +276,7 @@ export class BlindsController {
   }: MoveBlindsToFinalPositionParams) => {
     const { accessory } = platformAccessory;
     const { name } = accessory.context.device;
-    await sleep(800);
+    await sleep(BLINDS_FINAL_POSITION_SETTLE);
     this.platform.logger.debug(
       `   🎯 Control blinds slat tilt angle of "${name}" to final position "${JSON.stringify(
         {
@@ -267,13 +288,13 @@ export class BlindsController {
     );
 
     if (platformAccessory.getPositionState() !== 2) {
-      // Stop the blinds now at reached position (more or less :D)
+      // Stop the blinds at reached position
       await this.sendMoveJalousieCommand(
         platformAccessory,
         false,
         isMovingDown ? "FullDown" : "FullUp",
       );
-      await sleep(500);
+      await sleep(BLINDS_STOP_SETTLE_DELAY);
     }
     if (blindsType === "awning") {
       return;
@@ -287,26 +308,26 @@ export class BlindsController {
         return;
       } else if (tilt === "tilted") {
         this.platform.logger.debug(
-          `   🕹️ Double click "up" button with delay of 300ms (tilt=${tilt})})`,
+          `   🕹️ Double click "up" button with delay of ${BLINDS_TILT_DELAY_SHORT}ms (tilt=${tilt})`,
         );
         await this.sendMoveJalousieCommand(platformAccessory, true, "FullUp");
-        await sleep(300);
+        await sleep(BLINDS_TILT_DELAY_SHORT);
         await this.sendMoveJalousieCommand(platformAccessory, false, "FullUp");
       } else if (tilt === "open") {
         this.platform.logger.debug(
-          `   🕹️ Double click "up" button with delay of 1000ms (tilt=${tilt})})`,
+          `   🕹️ Double click "up" button with delay of ${BLINDS_TILT_DELAY_LONG}ms (tilt=${tilt})`,
         );
         await this.sendMoveJalousieCommand(platformAccessory, true, "FullUp");
-        await sleep(1000);
+        await sleep(BLINDS_TILT_DELAY_LONG);
         await this.sendMoveJalousieCommand(platformAccessory, false, "FullUp");
       }
     } else {
       if (tilt === "closed") {
         this.platform.logger.debug(
-          `   🕹️ Double click "down" button with delay of 1000ms (tilt=${tilt})})`,
+          `   🕹️ Double click "down" button with delay of ${BLINDS_TILT_DELAY_LONG}ms (tilt=${tilt})`,
         );
         await this.sendMoveJalousieCommand(platformAccessory, true, "FullDown");
-        await sleep(1000);
+        await sleep(BLINDS_TILT_DELAY_LONG);
         await this.sendMoveJalousieCommand(
           platformAccessory,
           false,
@@ -314,10 +335,10 @@ export class BlindsController {
         );
       } else if (tilt === "tilted") {
         this.platform.logger.debug(
-          `   🕹️ Double click "down" button with delay of 600ms (tilt=${tilt})})`,
+          `   🕹️ Double click "down" button with delay of ${BLINDS_TILT_DELAY_MEDIUM}ms (tilt=${tilt})`,
         );
         await this.sendMoveJalousieCommand(platformAccessory, true, "FullDown");
-        await sleep(600);
+        await sleep(BLINDS_TILT_DELAY_MEDIUM);
         await this.sendMoveJalousieCommand(
           platformAccessory,
           false,
@@ -341,12 +362,10 @@ export class BlindsController {
     if (failOver > 1) {
       return;
     }
-    const jsError = await sendCommand(
+    await sendCommandSafe(
       this.platform,
       platformAccessory.identifier,
       [command],
     );
-
-    return jsError;
   };
 }

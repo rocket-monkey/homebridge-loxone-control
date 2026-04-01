@@ -22,6 +22,10 @@ export class Logger {
     this.platform.log.debug(message, ...parameters);
   };
 
+  warn = (message: string, ...parameters: any[]) => {
+    this.platform.log.warn(message, ...parameters);
+  };
+
   error = (message: string, ...parameters: any[]) => {
     this.platform.log.error(message, ...parameters);
   };

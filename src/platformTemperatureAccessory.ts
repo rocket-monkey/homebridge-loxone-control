@@ -4,21 +4,16 @@ import { LoxoneControlPlatform } from "./platform.js";
 import { States } from "./loxone/types.js";
 
 export class PlatformTemperatureAccessory extends AccessoryBase {
+  protected override get modelName() {
+    return "Loxone Temperature";
+  }
+
   constructor(
     public readonly platform: LoxoneControlPlatform,
     public readonly accessory: PlatformAccessory,
     public readonly identifier: string,
   ) {
     super(platform, accessory, identifier);
-    // set accessory information
-    this.accessory
-      .getService(this.platform.Service.AccessoryInformation)!
-      .setCharacteristic(
-        this.platform.Characteristic.Manufacturer,
-        "Homebrdige Loxone Puppeteer by @rvetere",
-      )
-      .setCharacteristic(this.platform.Characteristic.Model, "Loxone Light")
-      .setCharacteristic(this.platform.Characteristic.SerialNumber, "🤖");
 
     this.service =
       this.accessory.getService(this.platform.Service.TemperatureSensor) ||
@@ -26,10 +21,7 @@ export class PlatformTemperatureAccessory extends AccessoryBase {
 
     // set the service name, this is what is displayed as the default name on the Home app
     // in this example we are using the name we stored in the `accessory.context` in the `discoverDevices` method.
-    this.service.setCharacteristic(
-      this.platform.Characteristic.Name,
-      accessory.context.device.name,
-    );
+    this.setServiceName(this.service, accessory.context.device.name);
 
     // each service must implement at-minimum the "required characteristics" for the given service type
     // see https://developers.homebridge.io/#/service/Lightbulb
@@ -60,7 +52,11 @@ export class PlatformTemperatureAccessory extends AccessoryBase {
   }
 
   setState = (newValues: States) => {
-    const firstValue = newValues[Object.keys(newValues)[0]];
+    const keys = Object.keys(newValues);
+    if (keys.length === 0) {
+      return;
+    }
+    const firstValue = newValues[keys[0]];
     // this.platform.logger.debug(`🥶 setState: ${JSON.stringify({ firstValue })}`);
     const newStates: States = {
       Temperature: firstValue,

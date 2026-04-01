@@ -1,33 +1,26 @@
 import { CharacteristicValue, PlatformAccessory } from "homebridge";
 import { AccessoryBase } from "./accessoryBase.js";
-import { sendCommand } from "./loxone/utils/sendCommand.js";
+import { sendCommandSafe } from "./loxone/utils/sendCommand.js";
 import { LoxoneControlPlatform } from "./platform.js";
 import { States } from "./loxone/types.js";
 
 export class PlatformLightAccessory extends AccessoryBase {
+  protected override get modelName() {
+    return "Loxone Light";
+  }
+
   constructor(
     public readonly platform: LoxoneControlPlatform,
     public readonly accessory: PlatformAccessory,
     public readonly identifier: string,
   ) {
     super(platform, accessory, identifier);
-    this.accessory
-      .getService(this.platform.Service.AccessoryInformation)!
-      .setCharacteristic(
-        this.platform.Characteristic.Manufacturer,
-        "Homebrdige Loxone Puppeteer by @rvetere",
-      )
-      .setCharacteristic(this.platform.Characteristic.Model, "Loxone Light")
-      .setCharacteristic(this.platform.Characteristic.SerialNumber, "🤖");
 
     this.service =
       this.accessory.getService(this.platform.Service.Lightbulb) ||
       this.accessory.addService(this.platform.Service.Lightbulb);
 
-    this.service.setCharacteristic(
-      this.platform.Characteristic.Name,
-      accessory.context.device.name,
-    );
+    this.setServiceName(this.service, accessory.context.device.name);
 
     this.service
       .getCharacteristic(this.platform.Characteristic.On)
@@ -53,12 +46,9 @@ export class PlatformLightAccessory extends AccessoryBase {
         this.states.On ? "On" : "Off"
       } to ${value ? "On" : "Off"}`,
     );
-    const jsError = await sendCommand(this.platform, this.identifier, [
+    await sendCommandSafe(this.platform, this.identifier, [
       value ? "on" : "off",
     ]);
-    if (jsError) {
-      this.platform.logger.error(`Error in sendCommand: ${jsError as string}`);
-    }
   }
 
   async getOn(): Promise<CharacteristicValue> {
@@ -76,13 +66,10 @@ export class PlatformLightAccessory extends AccessoryBase {
     this.platform.logger.info(
       `💡 Control brightness "${name}" from ${this.states.Brightness}% to ${value}%`,
     );
-    const jsError = await sendCommand(this.platform, this.identifier, [
+    await sendCommandSafe(this.platform, this.identifier, [
       `${value}`,
       "override",
     ]);
-    if (jsError) {
-      this.platform.logger.error(`Error in sendCommand: ${jsError as string}`);
-    }
   }
 
   async getBrightness(): Promise<CharacteristicValue> {
@@ -90,7 +77,11 @@ export class PlatformLightAccessory extends AccessoryBase {
   }
 
   setState = (newValues: States) => {
-    const firstValue = newValues[Object.keys(newValues)[0]];
+    const keys = Object.keys(newValues);
+    if (keys.length === 0) {
+      return;
+    }
+    const firstValue = newValues[keys[0]];
     const newStates: States = {};
     if (firstValue === 0) {
       newStates.On = false;

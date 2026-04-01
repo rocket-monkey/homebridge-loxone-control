@@ -2,7 +2,7 @@
   "watch": ["src"],
   "ext": "ts",
   "ignore": [],
-  "exec": "tsc && homebridge -U ~/.homebridge/ -D -I",
+  "exec": "tsc && node ~/.homebridge/node_modules/homebridge-config-ui-x/dist/bin/standalone.js -U ~/.homebridge -P /Users/removetere/Development/homebridge-loxone-control/node_modules -I & homebridge -U ~/.homebridge/ -P ~/.homebridge/node_modules -D -I",
   "signal": "SIGTERM",
   "env": {
     "NODE_OPTIONS": "--trace-warnings"

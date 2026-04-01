@@ -1,12 +1,16 @@
 /* eslint-disable indent */
 import { CharacteristicValue, PlatformAccessory, Service } from "homebridge";
 import { AccessoryBase } from "./accessoryBase.js";
-import { sendCommand } from "./loxone/utils/sendCommand.js";
+import { sendCommandSafe } from "./loxone/utils/sendCommand.js";
 import { LoxoneControlPlatform } from "./platform.js";
 import { splitTail } from "./loxone/utils/split.js";
 import { States } from "./loxone/types.js";
 
 export class PlatformFanAccessory extends AccessoryBase {
+  protected override get modelName() {
+    return "Loxone Fan";
+  }
+
   private fanLevels: Array<{ index: number; loxoneLevelName: string }> = [];
   private additionalServices: Service[] = [];
 
@@ -16,14 +20,6 @@ export class PlatformFanAccessory extends AccessoryBase {
     public readonly identifier: string,
   ) {
     super(platform, accessory, identifier);
-    this.accessory
-      .getService(this.platform.Service.AccessoryInformation)!
-      .setCharacteristic(
-        this.platform.Characteristic.Manufacturer,
-        "Homebrdige Loxone Puppeteer by @rvetere",
-      )
-      .setCharacteristic(this.platform.Characteristic.Model, "Loxone Fan")
-      .setCharacteristic(this.platform.Characteristic.SerialNumber, "🤖");
 
     this.parseConfigFanLevels();
 
@@ -31,10 +27,7 @@ export class PlatformFanAccessory extends AccessoryBase {
       this.accessory.getService(this.platform.Service.Fanv2) ||
       this.accessory.addService(this.platform.Service.Fanv2);
 
-    this.service.setCharacteristic(
-      this.platform.Characteristic.Name,
-      accessory.context.device.name,
-    );
+    this.setServiceName(this.service, accessory.context.device.name);
 
     this.service
       .getCharacteristic(this.platform.Characteristic.Active)
@@ -42,6 +35,16 @@ export class PlatformFanAccessory extends AccessoryBase {
       .onGet(this.getOn.bind(this));
 
     const { name, fanBathroom, fanAddButtons } = this.accessory.context.device;
+
+    // Add RotationSpeed for non-bathroom fans (maps fan levels to percentage)
+    if (!fanBathroom) {
+      this.service
+        .getCharacteristic(this.platform.Characteristic.RotationSpeed)
+        .setProps({ minValue: 0, maxValue: 100, minStep: 1 })
+        .onSet(this.setRotationSpeed.bind(this))
+        .onGet(this.getRotationSpeed.bind(this));
+    }
+
     if (!fanBathroom && fanAddButtons) {
       const buttons = fanAddButtons.split(",");
       buttons.forEach((indexStr: string) => {
@@ -55,6 +58,7 @@ export class PlatformFanAccessory extends AccessoryBase {
             `${name} ${levelToSet.loxoneLevelName}`,
             `${name}-${levelToSet.index}`,
           );
+        this.setServiceName(buttonSwitchService, levelToSet.loxoneLevelName);
 
         buttonSwitchService
           .getCharacteristic(this.platform.Characteristic.On)
@@ -67,23 +71,59 @@ export class PlatformFanAccessory extends AccessoryBase {
     this.parseConfigFanLevels = this.parseConfigFanLevels.bind(this);
   }
 
+  // --- RotationSpeed: map fan levels to percentage ---
+
+  private levelToPercent(levelIndex: number): number {
+    const maxLevel = this.fanLevels.length - 1;
+    if (maxLevel <= 0) {
+      return 0;
+    }
+    return Math.round((levelIndex / maxLevel) * 100);
+  }
+
+  private percentToLevel(percent: number): number {
+    const maxLevel = this.fanLevels.length - 1;
+    if (maxLevel <= 0) {
+      return 0;
+    }
+    return Math.round((percent / 100) * maxLevel);
+  }
+
+  async setRotationSpeed(value: CharacteristicValue) {
+    const percent = value as number;
+    const levelIndex = this.percentToLevel(percent);
+    const fanLevel = this.fanLevels[levelIndex];
+    if (!fanLevel) {
+      return;
+    }
+
+    const { name } = this.accessory.context.device;
+    this.platform.logger.info(
+      `💨 Control fan speed "${name}" to level ${fanLevel.index} (${fanLevel.loxoneLevelName}, ${percent}%)`,
+    );
+    await sendCommandSafe(this.platform, this.identifier, [
+      fanLevel.index === 0 ? "reset" : fanLevel.index,
+    ]);
+  }
+
+  getRotationSpeed(): CharacteristicValue {
+    const levelIndex = this.states?.FanLevelIndex ?? 0;
+    return this.levelToPercent(levelIndex);
+  }
+
+  // --- Level buttons ---
+
   setLevel =
     (level: { index: number; loxoneLevelName: string }) =>
     async (value: CharacteristicValue) => {
-      // when we turn this button off, just set it back to "fanOnSet" value
       const levelToSet = value ? level.index : 1;
       const { name } = this.accessory.context.device;
       this.platform.logger.info(
         `💨 Control fan level "${name}" to "${levelToSet}"`,
       );
-      const jsError = await sendCommand(this.platform, this.identifier, [
+      await sendCommandSafe(this.platform, this.identifier, [
         levelToSet,
       ]);
-      if (jsError) {
-        this.platform.logger.error(
-          `Error in sendCommand: ${jsError as string}`,
-        );
-      }
     };
 
   getLevel =
@@ -92,13 +132,14 @@ export class PlatformFanAccessory extends AccessoryBase {
       return this.states?.FanLevelIndex === level.index;
     };
 
+  // --- On/Off ---
+
   async setOn(value: CharacteristicValue) {
     if (this.states?.On === value) {
       return;
     }
 
-    const { fanBathroom } = this.accessory.context.device;
-    const { name } = this.accessory.context.device;
+    const { fanBathroom, name } = this.accessory.context.device;
     this.platform.logger.info(
       `💨 Control fan "${name}" from ${this.states.On ? "On" : "Off"} to ${
         value ? "On" : "Off"
@@ -112,23 +153,32 @@ export class PlatformFanAccessory extends AccessoryBase {
       : value
       ? "1"
       : "reset";
-    const jsError = await sendCommand(this.platform, this.identifier, [
+    await sendCommandSafe(this.platform, this.identifier, [
       command,
     ]);
-    if (jsError) {
-      this.platform.logger.error(`Error in sendCommand: ${jsError as string}`);
-    }
   }
 
   async getOn(): Promise<CharacteristicValue> {
     return this.states?.On || false;
   }
 
+  // --- State updates from Loxone ---
+
   setState = (givenValues: States) => {
     const newValues = Array.isArray(givenValues) ? givenValues : [givenValues];
     const newValue = newValues[0];
-    const newIndex = newValue[Object.keys(newValue)[0]];
+    if (!newValue) {
+      return;
+    }
+    const keys = Object.keys(newValue);
+    if (keys.length === 0) {
+      return;
+    }
+    const newIndex = newValue[keys[0]];
     const newFanLevel = this.fanLevels[newIndex];
+    if (!newFanLevel) {
+      return;
+    }
     const newStates: States = {
       On: newFanLevel.index > 0,
       FanLevelIndex: newFanLevel.index,
@@ -149,6 +199,12 @@ export class PlatformFanAccessory extends AccessoryBase {
     this.service?.updateCharacteristic(
       this.platform.Characteristic.Active,
       this.states?.On,
+    );
+
+    // Update RotationSpeed to reflect the current level
+    this.service?.updateCharacteristic(
+      this.platform.Characteristic.RotationSpeed,
+      this.levelToPercent(newFanLevel.index),
     );
   };
 

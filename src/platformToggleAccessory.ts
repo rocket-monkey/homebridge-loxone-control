@@ -1,33 +1,26 @@
 import { CharacteristicValue, PlatformAccessory } from "homebridge";
 import { AccessoryBase } from "./accessoryBase.js";
-import { sendCommand } from "./loxone/utils/sendCommand.js";
+import { sendCommandSafe } from "./loxone/utils/sendCommand.js";
 import { LoxoneControlPlatform } from "./platform.js";
 import { States } from "./loxone/types.js";
 
 export class PlatformToggleAccessory extends AccessoryBase {
+  protected override get modelName() {
+    return "Loxone Toggle";
+  }
+
   constructor(
     public readonly platform: LoxoneControlPlatform,
     public readonly accessory: PlatformAccessory,
     public readonly identifier: string,
   ) {
     super(platform, accessory, identifier);
-    this.accessory
-      .getService(this.platform.Service.AccessoryInformation)!
-      .setCharacteristic(
-        this.platform.Characteristic.Manufacturer,
-        "Homebrdige Loxone Puppeteer by @rvetere",
-      )
-      .setCharacteristic(this.platform.Characteristic.Model, "Loxone Toggle")
-      .setCharacteristic(this.platform.Characteristic.SerialNumber, "🤖");
 
     this.service =
       this.accessory.getService(this.platform.Service.Switch) ||
       this.accessory.addService(this.platform.Service.Switch);
 
-    this.service.setCharacteristic(
-      this.platform.Characteristic.Name,
-      accessory.context.device.name,
-    );
+    this.setServiceName(this.service, accessory.context.device.name);
 
     // For CentralJalousie, we need special handling since it's a toggle command
     if (this.identifier.includes("type=CentralJalousie")) {
@@ -55,14 +48,14 @@ export class PlatformToggleAccessory extends AccessoryBase {
     if (value) {
       // Turning ON: send auto command to central automation AND all individual blinds
       this.platform.logger.info(`🔄 CentralJalousie ${name}: Sending auto command to enable automation`);
-      await sendCommand(this.platform, this.identifier, ["auto"]);
+      await sendCommandSafe(this.platform, this.identifier, ["auto"]);
       
       // Also send auto command to all individual blind accessories
       await this.platform.sendCommandToAllBlinds(["auto"]);
     } else {
       // Turning OFF: send stop command to central automation AND NoAuto to all individual blinds
       this.platform.logger.info(`🔄 CentralJalousie ${name}: Sending stop command to disable automation`);
-      await sendCommand(this.platform, this.identifier, ["stop"]);
+      await sendCommandSafe(this.platform, this.identifier, ["stop"]);
       
       // Also send NoAuto command to all individual blind accessories
       await this.platform.sendCommandToAllBlinds(["NoAuto"]);
@@ -77,9 +70,9 @@ export class PlatformToggleAccessory extends AccessoryBase {
 
     // For regular toggles, send on/off as requested
     if (value) {
-      await sendCommand(this.platform, this.identifier, ["on"]);
+      await sendCommandSafe(this.platform, this.identifier, ["on"]);
     } else {
-      await sendCommand(this.platform, this.identifier, ["off"]);
+      await sendCommandSafe(this.platform, this.identifier, ["off"]);
     }
   }
 
@@ -143,10 +136,10 @@ export class PlatformToggleAccessory extends AccessoryBase {
       const currentState = await this.getOn();
       if (currentState) {
         // Currently ON (automation active): send stop to turn off
-        await sendCommand(this.platform, this.identifier, ["stop"]);
+        await sendCommandSafe(this.platform, this.identifier, ["stop"]);
       } else {
         // Currently OFF (automation inactive): send auto to turn on
-        await sendCommand(this.platform, this.identifier, ["auto"]);
+        await sendCommandSafe(this.platform, this.identifier, ["auto"]);
       }
     } else {
       // For regular toggles, toggle the state
@@ -158,7 +151,7 @@ export class PlatformToggleAccessory extends AccessoryBase {
   setStateOn = async () => {
     if (this.identifier.includes("type=CentralJalousie")) {
       // For CentralJalousie, send "auto" to activate automation
-      await sendCommand(this.platform, this.identifier, ["auto"]);
+      await sendCommandSafe(this.platform, this.identifier, ["auto"]);
     } else {
       await this.setOn(true);
     }

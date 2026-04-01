@@ -6,11 +6,22 @@ import puppeteer, { Browser, Page } from "puppeteer";
 import { usernameSync } from "username";
 import { LoxoneControlPlatform } from "../platform.js";
 import { sleep } from "./utils/sleep.js";
+import {
+  NAVIGATION_TIMEOUT,
+  NAVIGATION_RETRY_TIMEOUT,
+  BROWSER_LAUNCH_TIMEOUT,
+  BROWSER_PROTOCOL_TIMEOUT,
+  LOGIN_JS_INIT_DELAY,
+  LOGIN_POST_SUBMIT_DELAY,
+  LOGIN_POST_LOAD_DELAY,
+  COLLECTION_POLL_INTERVAL,
+  COLLECTION_MAX_ATTEMPTS,
+  STANDBY_PREVENT_INTERVAL,
+} from "../settings.js";
 
 const __dirname = import.meta.dirname;
 const BROWSER_LOG = false; // set to true to log browser console messages
 const DEBUG_MODE = false; // set to true for verbose debugging
-const NAVIGATION_TIMEOUT = 180000; // 180 seconds timeout for navigation (Loxone loads 14-16MB JS files)
 
 export type LoxoneComponent = {
   identifier: string;
@@ -33,8 +44,8 @@ export class LoxoneWebinterface {
   public page: Page | undefined;
   public collectedComponents: LoxoneComponent[] = [];
 
-  private interval: NodeJS.Timer | undefined;
-  private preventStandbyInterval: NodeJS.Timer | undefined;
+  private interval: ReturnType<typeof setInterval> | undefined;
+  private preventStandbyInterval: ReturnType<typeof setInterval> | undefined;
 
   constructor(public readonly platform: LoxoneControlPlatform) {
     this.platform.logger.debug("LoxoneWebinterface constructor");
@@ -86,8 +97,8 @@ export class LoxoneWebinterface {
             executablePath: this.platform.config.chromiumPath,
             acceptInsecureCerts: true,
             args: launchArgs,
-            timeout: 30000,
-            protocolTimeout: 300000,
+            timeout: BROWSER_LAUNCH_TIMEOUT,
+            protocolTimeout: BROWSER_PROTOCOL_TIMEOUT,
           });
           if (DEBUG_MODE) {
             this.platform.logger.info("✅ Chromium started successfully");
@@ -106,8 +117,8 @@ export class LoxoneWebinterface {
           this.browser = await puppeteer.launch({
             acceptInsecureCerts: true,
             args: launchArgs,
-            timeout: 30000,
-            protocolTimeout: 300000,
+            timeout: BROWSER_LAUNCH_TIMEOUT,
+            protocolTimeout: BROWSER_PROTOCOL_TIMEOUT,
           });
           if (DEBUG_MODE) {
             this.platform.logger.info("✅ Chrome started successfully");
@@ -175,7 +186,7 @@ export class LoxoneWebinterface {
     // Listen to all responses for debugging
     // Listen to response errors
     this.page?.on("response", (response) => {
-      if (response.status() >= 400) {
+      if (response.status() >= 400 && !response.url().includes("statistic.js")) {
         this.platform.logger.error(`🔍 HTTP Error ${response.status()}: ${response.url()}`);
       }
     });
@@ -317,13 +328,13 @@ export class LoxoneWebinterface {
       } catch {
         this.platform.logger.error("❌ Login form never appeared - retrying with extended timeout...");
         // Try once more with a longer timeout — the huge comps.js can take very long
-        await this.page.waitForSelector("input[type=text]", { timeout: 300000 });
+        await this.page.waitForSelector("input[type=text]", { timeout: NAVIGATION_RETRY_TIMEOUT });
       }
       this.platform.logger.info(`✅ Login form appeared in ${Date.now() - startTime}ms`);
 
       // Wait for JS framework to fully initialize event handlers
       this.platform.logger.info("🔍 Waiting for page JS to initialize...");
-      await sleep(5000);
+      await sleep(LOGIN_JS_INIT_DELAY);
 
       // Use the same approach as v1.5.5: page.type + page.click
       this.platform.logger.info("🔍 Typing credentials...");
@@ -344,9 +355,9 @@ export class LoxoneWebinterface {
       // and give Chrome time to parse it.
       // Wait for the post-login page to load (comps.js parsing takes time)
       this.platform.logger.info("🔍 Waiting for Loxone web interface to load...");
-      await sleep(1000 * 30);
+      await sleep(LOGIN_POST_SUBMIT_DELAY);
       this.platform.logger.info(`✅ Login flow completed in ${Date.now() - navigationStart}ms`);
-      await sleep(1000 * 2);
+      await sleep(LOGIN_POST_LOAD_DELAY);
 
       // random number between 0 and 60 seconds
       const randomDelay = Math.floor(Math.random() * 1000 * 60);
@@ -360,7 +371,7 @@ export class LoxoneWebinterface {
         if (this.page) {
           await this.page.mouse.move(0, 0);
         }
-      }, 1000 * 30);
+      }, STANDBY_PREVENT_INTERVAL);
 
       this.platform.logger.info(
         "✅ Login successful, loxone web interface ready!",
@@ -369,8 +380,8 @@ export class LoxoneWebinterface {
       // Wait for the patched comps.js to initialize window.collection
       this.platform.logger.info("🔍 Waiting for device collection to be available...");
       let allCollectedComponents: any;
-      for (let i = 0; i < 30; i++) {
-        await sleep(1000 * 5);
+      for (let i = 0; i < COLLECTION_MAX_ATTEMPTS; i++) {
+        await sleep(COLLECTION_POLL_INTERVAL);
         try {
           allCollectedComponents = await this.page?.evaluate(() => {
             // @ts-expect-error patched
@@ -385,7 +396,7 @@ export class LoxoneWebinterface {
         }
       }
       if (!allCollectedComponents || allCollectedComponents.length === 0) {
-        this.platform.logger.error("❌ No components collected after 150s");
+        this.platform.logger.error(`❌ No components collected after ${(COLLECTION_MAX_ATTEMPTS * COLLECTION_POLL_INTERVAL) / 1000}s`);
         return;
       }
       this.collectedComponents = allCollectedComponents.map((c: any) => ({
@@ -489,6 +500,31 @@ export class LoxoneWebinterface {
         this.platform.logger.error("🔍 Navigation timeout during refresh - server may be slow or unresponsive");
       }
     }
+  }
+
+  async shutdown() {
+    if (this.interval) {
+      clearInterval(this.interval);
+    }
+    if (this.preventStandbyInterval) {
+      clearInterval(this.preventStandbyInterval);
+    }
+    if (this.page) {
+      try {
+        await this.page.close();
+      } catch {
+        // page may already be closed
+      }
+    }
+    if (this.browser) {
+      try {
+        await this.browser.close();
+      } catch {
+        // browser may already be closed
+      }
+      this.browser = undefined;
+    }
+    this.platform.logger.info("Browser and intervals cleaned up");
   }
 
   getLoxoneCredentials() {

@@ -17,15 +17,17 @@ import { BlindsController } from "./blindsController.js";
 import { LoxoneWebinterface } from "./loxone/loxoneWebinterface.js";
 import { PLATFORM_NAME, PLUGIN_NAME } from "./settings.js";
 import { sleep } from "./loxone/utils/sleep.js";
-import { sendCommand } from "./loxone/utils/sendCommand.js";
+import { sendCommandSafe } from "./loxone/utils/sendCommand.js";
 import { splitTail } from "./loxone/utils/split.js";
 import { PlatformFanAccessory } from "./platformFanAccessory.js";
 import { PlatformLightAccessory } from "./platformLightAccessory.js";
 import { PlatformOutletAccessory } from "./platformOutletAccessory.js";
 import { PlatformTemperatureAccessory } from "./platformTemperatureAccessory.js";
 import { PlatformToggleAccessory } from "./platformToggleAccessory.js";
+import { PlatformCentralBlindsAccessory } from "./platformCentralBlindsAccessory.js";
 import { PlatformWindowCoveringAccessory } from "./platformWindowCoveringAccessory.js";
 import { Logger } from "./logger.js";
+import { parseIdentifier } from "./loxone/utils/parseIdentifier.js";
 
 /**
  * HomebridgePlatform
@@ -87,6 +89,14 @@ export class LoxoneControlPlatform implements DynamicPlatformPlugin {
     this.loxoneWebinterface = new LoxoneWebinterface(this);
     this.loxoneWebinterface.init();
     this.blindsController = new BlindsController(this);
+
+    this.api.on("shutdown", () => {
+      this.logger.info("Shutting down, cleaning up resources...");
+      this.loxoneWebinterface.shutdown();
+      if (this.requestServer) {
+        this.requestServer.close();
+      }
+    });
 
     this.createDeviceInstance = this.createDeviceInstance.bind(this);
     this.getLoxoneWebinterface = this.getLoxoneWebinterface.bind(this);
@@ -290,39 +300,38 @@ export class LoxoneControlPlatform implements DynamicPlatformPlugin {
   }
 
   async identifyAccessory(identifier: string) {
-    const [searchDescription] = identifier.split(":");
-    const [_room, category] = searchDescription.split(" • ");
+    const { category } = parseIdentifier(identifier);
     switch (category) {
       case "Klima":
         break;
       case "Beschattung":
-        await sendCommand(this, identifier, ["FullDown"]);
+        await sendCommandSafe(this, identifier, ["FullDown"]);
         await sleep(3000);
-        await sendCommand(this, identifier, ["FullUp"]);
+        await sendCommandSafe(this, identifier, ["FullUp"]);
         await sleep(500);
-        await sendCommand(this, identifier, ["FullUp"]);
+        await sendCommandSafe(this, identifier, ["FullUp"]);
         break;
       case "Beleuchtung":
-        await sendCommand(this, identifier, ["on"]);
+        await sendCommandSafe(this, identifier, ["on"]);
         await sleep(3000);
-        await sendCommand(this, identifier, ["off"]);
+        await sendCommandSafe(this, identifier, ["off"]);
         break;
       case "Lüftung":
-        await sendCommand(this, identifier, ["4"]);
+        await sendCommandSafe(this, identifier, ["4"]);
         await sleep(4000);
-        await sendCommand(this, identifier, ["reset"]);
+        await sendCommandSafe(this, identifier, ["reset"]);
         break;
       case "Automatikbeschattung":
-        await sendCommand(this, identifier, ["on"]);
+        await sendCommandSafe(this, identifier, ["on"]);
         await sleep(2000);
-        await sendCommand(this, identifier, ["off"]);
+        await sendCommandSafe(this, identifier, ["off"]);
         break;
       default:
         // For other categories that might be toggle switches, try a simple on/off
         if (category.includes("Automatikbeschattung")) {
-          await sendCommand(this, identifier, ["on"]);
+          await sendCommandSafe(this, identifier, ["on"]);
           await sleep(2000);
-          await sendCommand(this, identifier, ["off"]);
+          await sendCommandSafe(this, identifier, ["off"]);
         }
         break;
     }
@@ -332,9 +341,7 @@ export class LoxoneControlPlatform implements DynamicPlatformPlugin {
     identifier: string,
     accessory: PlatformAccessory<UnknownContext>,
   ) {
-    const [searchDescription, typeQuery, actionUuid] = identifier.split(":");
-    const [room, category] = searchDescription.split(" • ");
-    const type = typeQuery.split("=")[1];
+    const { room, category, type, actionUuid } = parseIdentifier(identifier);
     this.logger.info(
       `🔨 Create device instance for room: "${room}", category: "${category}", type: "${type}" (${actionUuid})...`,
     );
@@ -356,6 +363,8 @@ export class LoxoneControlPlatform implements DynamicPlatformPlugin {
           return new PlatformTemperatureAccessory(this, accessory, identifier);
         case "blinds":
           return new PlatformWindowCoveringAccessory(this, accessory, identifier);
+        case "centralBlinds":
+          return new PlatformCentralBlindsAccessory(this, accessory, identifier);
         case "toggle":
           return new PlatformToggleAccessory(this, accessory, identifier);
         default:
@@ -440,12 +449,10 @@ export class LoxoneControlPlatform implements DynamicPlatformPlugin {
       
       if (!foundState) {
         // Fallback: try to find state by matching type and UUID suffix
-        const [, typeQuery, actionUuid] = instance.identifier.split(":");
-        const type = typeQuery.split("=")[1];
+        const { type, actionUuid } = parseIdentifier(instance.identifier);
         
         for (const stateKey in this.allStates) {
-          const [, stateTypeQuery, stateActionUuid] = stateKey.split(":");
-          const stateType = stateTypeQuery.split("=")[1];
+          const { type: stateType, actionUuid: stateActionUuid } = parseIdentifier(stateKey);
           if (stateType === type && stateActionUuid === actionUuid) {
             foundState = this.allStates[stateKey];
             break;
@@ -516,13 +523,11 @@ export class LoxoneControlPlatform implements DynamicPlatformPlugin {
     if (!existingInstance) {
       // Fallback: try to match by type and UUID suffix when full identifier doesn't match
       // This handles the case where status updates use German room names but config uses UUID room names
-      const [, typeQuery, actionUuid] = identifier.split(":");
-      const type = typeQuery.split("=")[1];
-      
+      const { type: updateType, actionUuid: updateUuid } = parseIdentifier(identifier);
+
       existingInstance = this.instances.find((inst) => {
-        const [, instTypeQuery, instActionUuid] = inst.identifier.split(":");
-        const instType = instTypeQuery.split("=")[1];
-        return instType === type && instActionUuid === actionUuid;
+        const { type: instType, actionUuid: instUuid } = parseIdentifier(inst.identifier);
+        return instType === updateType && instUuid === updateUuid;
       });
     }
     
@@ -580,7 +585,7 @@ export class LoxoneControlPlatform implements DynamicPlatformPlugin {
     // Send commands to all blinds in parallel (without setting individual cooldowns)
     const commandPromises = blindInstances.map(async (blindInstance) => {
       try {
-        await sendCommand(this, blindInstance.identifier, commands);
+        await sendCommandSafe(this, blindInstance.identifier, commands);
         this.logger.debug(`🔄 Sent ${commands[0]} to ${blindInstance.accessory.context.device.name}`);
       } catch (error) {
         this.logger.error(`🔄 Failed to send ${commands[0]} to ${blindInstance.accessory.context.device.name}:`, error);
