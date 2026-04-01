@@ -49,13 +49,9 @@ export class PlatformLightAccessory extends AccessoryBase {
       this.platform.logger.info(
         `💡 Ignoring turn-on for "${name}" — power-on cooldown active`,
       );
-      setTimeout(() => {
-        this.service?.updateCharacteristic(
-          this.platform.Characteristic.On,
-          false,
-        );
-      }, 100);
-      return;
+      throw new this.platform.api.hap.HapStatusError(
+        this.platform.api.hap.HAPStatus.NOT_ALLOWED_IN_CURRENT_STATE,
+      );
     }
 
     this.platform.logger.info(
@@ -89,17 +85,9 @@ export class PlatformLightAccessory extends AccessoryBase {
       this.platform.logger.info(
         `💡 Ignoring brightness change for "${name}" — power-on cooldown active`,
       );
-      setTimeout(() => {
-        this.service?.updateCharacteristic(
-          this.platform.Characteristic.Brightness,
-          this.states?.Brightness || 0,
-        );
-        this.service?.updateCharacteristic(
-          this.platform.Characteristic.On,
-          false,
-        );
-      }, 100);
-      return;
+      throw new this.platform.api.hap.HapStatusError(
+        this.platform.api.hap.HAPStatus.NOT_ALLOWED_IN_CURRENT_STATE,
+      );
     }
     this.platform.logger.info(
       `💡 Control brightness "${name}" from ${this.states.Brightness}% to ${value}%`,
