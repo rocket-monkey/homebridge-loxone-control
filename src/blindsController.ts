@@ -304,6 +304,15 @@ export class BlindsController {
       return;
     }
 
+    // At position 0% (fully retracted), tilt adjustments are meaningless and would move the blind back down
+    const currentPosition = platformAccessory.states.Position ?? 0;
+    if (currentPosition === 0) {
+      this.platform.logger.debug(
+        `   👍 "${name}" at 0%, skipping tilt adjustment`,
+      );
+      return;
+    }
+
     if (isMovingDown) {
       if (tilt === "closed") {
         this.platform.logger.debug(
