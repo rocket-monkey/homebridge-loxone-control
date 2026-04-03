@@ -33,6 +33,7 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
   public autoSunPosition = false;
   public lastAutoSunCommand = 0; // Timestamp of last command to prevent flickering
   public onPositionUpdate: ((position: number, isStopped: boolean) => void) | null = null;
+  public onTiltUpdate: ((tilt: BlindsTilt) => void) | null = null;
   private targetPositionTimer: ReturnType<typeof setTimeout> | null = null;
   private tiltTimer: ReturnType<typeof setTimeout> | null = null;
   private pendingTargetValue: number | null = null;
@@ -634,6 +635,11 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
     if (this.onPositionUpdate) {
       const isStopped = newStates.PositionState === this.platform.Characteristic.PositionState.STOPPED;
       this.onPositionUpdate(newStates.Position ?? 0, isStopped);
+    }
+
+    // Notify blinds controller of tilt update
+    if (this.onTiltUpdate && this.states.TiltPosition !== newStates.TiltPosition) {
+      this.onTiltUpdate(newStates.TiltPosition);
     }
 
     // Update Auto Sun Position state based on automation text messages

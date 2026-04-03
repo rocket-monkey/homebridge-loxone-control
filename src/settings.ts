@@ -14,9 +14,6 @@ export const BLINDS_COMMAND_STAGGER_DELAY = 600;
 export const BLINDS_TILT_RESET_BUFFER = 1000;
 export const BLINDS_STOP_SETTLE_DELAY = 500;
 export const BLINDS_FINAL_POSITION_SETTLE = 800;
-export const BLINDS_TILT_DELAY_SHORT = 300;
-export const BLINDS_TILT_DELAY_MEDIUM = 600;
-export const BLINDS_TILT_DELAY_LONG = 1000;
 
 export const LOGIN_JS_INIT_DELAY = 5000;
 export const LOGIN_POST_SUBMIT_DELAY = 30000;
@@ -34,3 +31,9 @@ export const AUTO_SUN_COOLDOWN = 1000;
 
 export const BLINDS_POSITION_TOLERANCE = 3;
 export const BLINDS_POSITION_TIMEOUT = 120_000;
+
+// Tilt pulse: send command, wait pulse duration, send stop
+export const BLINDS_TILT_PULSE_SHORT = 300;  // 1 tilt step (closed↔tilted or tilted↔open)
+export const BLINDS_TILT_PULSE_LONG = 1000;  // 2 tilt steps (closed↔open)
+export const BLINDS_TILT_SETTLE_DELAY = 1500; // wait for Loxone to report new tilt after pulse
+export const BLINDS_TILT_MAX_RETRIES = 3;

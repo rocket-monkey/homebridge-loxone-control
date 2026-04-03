@@ -1,5 +1,4 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-/* eslint-disable @typescript-eslint/no-unused-vars */
 import type {
   API,
   Characteristic,
@@ -249,41 +248,263 @@ export class LoxoneControlPlatform implements DynamicPlatformPlugin {
     }
   }
 
+  private parseQuery(url: string): Record<string, string> {
+    const params: Record<string, string> = {};
+    const qIndex = url.indexOf("?");
+    if (qIndex === -1) {
+      return params;
+    }
+    const queryString = url.substring(qIndex + 1);
+    for (const pair of queryString.split("&")) {
+      const [key, ...rest] = pair.split("=");
+      params[decodeURIComponent(key)] = decodeURIComponent(rest.join("="));
+    }
+    return params;
+  }
+
+  private findInstanceByName(name: string): AccessoryBase | undefined {
+    return this.instances.find(
+      (i) => i.accessory.context.device.name.toLowerCase() === name.toLowerCase(),
+    );
+  }
+
+  private jsonResponse(response: ServerResponse, data: unknown, status = 200) {
+    response.writeHead(status, { "Content-Type": "application/json" });
+    response.end(JSON.stringify(data, null, 2));
+  }
+
   private async handleRequest(
     request: IncomingMessage,
     response: ServerResponse,
   ) {
-    const [_url, query] =
-      request.url && request.url.includes("?") ? request.url.split("?") : [];
-    const identifierRaw = query ? query.replace("name=", "") : "";
-    const identifier = identifierRaw ? decodeURIComponent(identifierRaw) : null;
+    const url = request.url || "/";
+    const pathname = url.split("?")[0];
+    const params = this.parseQuery(url);
 
-    if (request.url === "/discoverDevices") {
-      this.logger.debug("🔎 Discover devices request received...");
-      if (!this.loxoneWebinterfaceReady) {
-        let tries = 0;
-        while (!this.loxoneWebinterfaceReady && tries < 4) {
-          await sleep(500);
-          tries++;
+    // Legacy compat: old "name" param is identifier-based
+    const legacyIdentifier = params.name || null;
+
+    try {
+      switch (pathname) {
+        case "/discoverDevices": {
+          this.logger.debug("🔎 Discover devices request received...");
+          if (!this.loxoneWebinterfaceReady) {
+            let tries = 0;
+            while (!this.loxoneWebinterfaceReady && tries < 4) {
+              await sleep(500);
+              tries++;
+            }
+          }
+          this.jsonResponse(response,
+            this.loxoneWebinterface.collectedComponents.map((c) => c.identifier),
+          );
+          return;
         }
-      }
 
-      response.writeHead(200, { "Content-Type": "application/json" });
-      response.end(
-        JSON.stringify(
-          this.loxoneWebinterface.collectedComponents.map((c) => c.identifier),
-        ),
-      );
+        case "/api/accessories": {
+          const accessories = this.instances.map((instance) => {
+            const { name } = instance.accessory.context.device;
+            const type = instance.constructor.name
+              .replace("Platform", "").replace("Accessory", "");
+            return { name, type, identifier: instance.identifier, states: instance.states };
+          });
+          this.jsonResponse(response, accessories);
+          return;
+        }
+
+        case "/api/accessory": {
+          const instance = params.name ? this.findInstanceByName(params.name) : null;
+          if (!instance) {
+            this.jsonResponse(response, { error: "Accessory not found", name: params.name }, 404);
+            return;
+          }
+          const { name } = instance.accessory.context.device;
+          const type = instance.constructor.name
+            .replace("Platform", "").replace("Accessory", "");
+          const extra: Record<string, unknown> = {};
+          if (instance instanceof PlatformWindowCoveringAccessory) {
+            extra.tilted = instance.tilted;
+            extra.opened = instance.opened;
+            extra.desiredTilt = instance.desiredTilt;
+            extra.autoSunPosition = instance.autoSunPosition;
+          }
+          this.jsonResponse(response, { name, type, identifier: instance.identifier, states: instance.states, ...extra });
+          return;
+        }
+
+        case "/api/blinds/position": {
+          const instance = params.name ? this.findInstanceByName(params.name) : null;
+          if (!instance || !(instance instanceof PlatformWindowCoveringAccessory)) {
+            this.jsonResponse(response, { error: "Blinds accessory not found", name: params.name }, 404);
+            return;
+          }
+          const position = parseInt(params.position);
+          if (isNaN(position) || position < 0 || position > 100) {
+            this.jsonResponse(response, { error: "Invalid position (0-100)" }, 400);
+            return;
+          }
+          this.logger.info(`🌐 API: Setting "${params.name}" position to ${position}%`);
+          await instance.setTargetPosition(position);
+          this.jsonResponse(response, { ok: true, action: "setPosition", position });
+          return;
+        }
+
+        case "/api/blinds/tilt": {
+          const instance = params.name ? this.findInstanceByName(params.name) : null;
+          if (!instance || !(instance instanceof PlatformWindowCoveringAccessory)) {
+            this.jsonResponse(response, { error: "Blinds accessory not found", name: params.name }, 404);
+            return;
+          }
+          const validTilts = ["closed", "tilted", "open"];
+          if (!validTilts.includes(params.tilt)) {
+            this.jsonResponse(response, { error: "Invalid tilt (closed, tilted, open)" }, 400);
+            return;
+          }
+          // Map tilt names to angles for the HomeKit interface
+          const tiltAngles: Record<string, number> = { closed: -90, tilted: 0, open: 90 };
+          const angle = tiltAngles[params.tilt];
+          this.logger.info(`🌐 API: Setting "${params.name}" tilt to "${params.tilt}" (angle: ${angle})`);
+          await instance.setTargetTiltAngle(angle);
+          this.jsonResponse(response, { ok: true, action: "setTilt", tilt: params.tilt, angle });
+          return;
+        }
+
+        case "/api/blinds/scene": {
+          // Set position + tilt together (like a HomeKit scene would)
+          const instance = params.name ? this.findInstanceByName(params.name) : null;
+          if (!instance || !(instance instanceof PlatformWindowCoveringAccessory)) {
+            this.jsonResponse(response, { error: "Blinds accessory not found", name: params.name }, 404);
+            return;
+          }
+          const position = parseInt(params.position);
+          if (isNaN(position) || position < 0 || position > 100) {
+            this.jsonResponse(response, { error: "Invalid position (0-100)" }, 400);
+            return;
+          }
+          const validTilts = ["closed", "tilted", "open"];
+          const tilt = params.tilt || "closed";
+          if (!validTilts.includes(tilt)) {
+            this.jsonResponse(response, { error: "Invalid tilt (closed, tilted, open)" }, 400);
+            return;
+          }
+          const tiltAngles: Record<string, number> = { closed: -90, tilted: 0, open: 90 };
+          const angle = tiltAngles[tilt];
+          this.logger.info(`🌐 API: Scene "${params.name}" → position=${position}%, tilt="${tilt}"`);
+          // Simulate scene: set tilt first, then position (like HomeKit does)
+          await instance.setTargetTiltAngle(angle);
+          await instance.setTargetPosition(position);
+          this.jsonResponse(response, { ok: true, action: "scene", position, tilt, angle });
+          return;
+        }
+
+        case "/api/blinds/button": {
+          const instance = params.name ? this.findInstanceByName(params.name) : null;
+          if (!instance || !(instance instanceof PlatformWindowCoveringAccessory)) {
+            this.jsonResponse(response, { error: "Blinds accessory not found", name: params.name }, 404);
+            return;
+          }
+          const button = params.button;
+          const value = params.value !== "false" && params.value !== "0";
+          if (button === "tilted") {
+            instance.setTiltedOn(value);
+            this.jsonResponse(response, { ok: true, action: "setTilted", value });
+          } else if (button === "opened") {
+            instance.setOpenedOn(value);
+            this.jsonResponse(response, { ok: true, action: "setOpened", value });
+          } else if (button === "shade") {
+            await instance.setShadeOn(true);
+            this.jsonResponse(response, { ok: true, action: "shade" });
+          } else {
+            this.jsonResponse(response, { error: "Invalid button (tilted, opened, shade)" }, 400);
+          }
+          return;
+        }
+
+        case "/api/light/on": {
+          const instance = params.name ? this.findInstanceByName(params.name) : null;
+          if (!instance || !(instance instanceof PlatformLightAccessory)) {
+            this.jsonResponse(response, { error: "Light accessory not found", name: params.name }, 404);
+            return;
+          }
+          const value = params.value !== "false" && params.value !== "0";
+          this.logger.info(`🌐 API: Setting "${params.name}" to ${value ? "On" : "Off"}`);
+          await instance.setOn(value);
+          this.jsonResponse(response, { ok: true, action: "setOn", value });
+          return;
+        }
+
+        case "/api/light/brightness": {
+          const instance = params.name ? this.findInstanceByName(params.name) : null;
+          if (!instance || !(instance instanceof PlatformLightAccessory)) {
+            this.jsonResponse(response, { error: "Light accessory not found", name: params.name }, 404);
+            return;
+          }
+          const brightness = parseInt(params.value);
+          if (isNaN(brightness) || brightness < 0 || brightness > 100) {
+            this.jsonResponse(response, { error: "Invalid brightness (0-100)" }, 400);
+            return;
+          }
+          this.logger.info(`🌐 API: Setting "${params.name}" brightness to ${brightness}%`);
+          await instance.setBrightness(brightness);
+          this.jsonResponse(response, { ok: true, action: "setBrightness", brightness });
+          return;
+        }
+
+        case "/api/outlet/on": {
+          const instance = params.name ? this.findInstanceByName(params.name) : null;
+          if (!instance || !(instance instanceof PlatformOutletAccessory)) {
+            this.jsonResponse(response, { error: "Outlet accessory not found", name: params.name }, 404);
+            return;
+          }
+          const value = params.value !== "false" && params.value !== "0";
+          this.logger.info(`🌐 API: Setting outlet "${params.name}" to ${value ? "On" : "Off"}`);
+          await instance.setOn(value);
+          this.jsonResponse(response, { ok: true, action: "setOn", value });
+          return;
+        }
+
+        case "/api/fan/on": {
+          const instance = params.name ? this.findInstanceByName(params.name) : null;
+          if (!instance || !(instance instanceof PlatformFanAccessory)) {
+            this.jsonResponse(response, { error: "Fan accessory not found", name: params.name }, 404);
+            return;
+          }
+          const value = params.value !== "false" && params.value !== "0";
+          this.logger.info(`🌐 API: Setting fan "${params.name}" to ${value ? "On" : "Off"}`);
+          await instance.setOn(value ? 1 : 0);
+          this.jsonResponse(response, { ok: true, action: "setOn", value });
+          return;
+        }
+
+        // Legacy endpoints
+        case "/identifyAccessory": {
+          if (legacyIdentifier) {
+            this.identifyAccessory(legacyIdentifier);
+          }
+          break;
+        }
+        case "/toggle": {
+          if (legacyIdentifier) {
+            this.toggleAccessoryState(legacyIdentifier);
+          }
+          break;
+        }
+        case "/setOn": {
+          if (legacyIdentifier) {
+            this.setAccessoryStateOn(legacyIdentifier);
+          }
+          break;
+        }
+        default:
+          break;
+      }
+    } catch (e) {
+      this.logger.error(`API error: ${e}`);
+      this.jsonResponse(response, { error: String(e) }, 500);
       return;
-    } else if (request.url?.includes("/identifyAccessory") && identifier) {
-      this.identifyAccessory(identifier);
-    } else if (request.url?.includes("/toggle") && identifier) {
-      this.toggleAccessoryState(identifier);
-    } else if (request.url?.includes("/setOn") && identifier) {
-      this.setAccessoryStateOn(identifier);
     }
 
-    response.writeHead(204); // 204 No content
+    response.writeHead(204);
     response.end();
   }
 
