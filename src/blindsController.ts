@@ -27,6 +27,7 @@ interface MoveBlindsToFinalPositionParams {
   isMovingDown: boolean;
   tilt: BlindsTilt;
   blindsType: BlindsType;
+  targetPosition: number;
 }
 
 interface ActiveMovement {
@@ -128,7 +129,7 @@ export class BlindsController {
           `🎯 "${name}" reached target position ${targetPosition}%`,
         );
         await this.moveBlindsToFinalPosition({
-          platformAccessory, isMovingDown, tilt, blindsType,
+          platformAccessory, isMovingDown, tilt, blindsType, targetPosition,
         });
         resolve();
       };
@@ -139,7 +140,7 @@ export class BlindsController {
         );
         cleanup();
         await this.moveBlindsToFinalPosition({
-          platformAccessory, isMovingDown, tilt, blindsType,
+          platformAccessory, isMovingDown, tilt, blindsType, targetPosition,
         });
         resolve();
       }, BLINDS_POSITION_TIMEOUT);
@@ -258,6 +259,7 @@ export class BlindsController {
             isMovingDown: true,
             tilt,
             blindsType,
+            targetPosition: value,
           });
         } else {
           this.platform.logger.debug(
@@ -275,6 +277,7 @@ export class BlindsController {
     isMovingDown,
     tilt,
     blindsType,
+    targetPosition,
   }: MoveBlindsToFinalPositionParams) => {
     const { accessory } = platformAccessory;
     const { name } = accessory.context.device;
@@ -304,11 +307,10 @@ export class BlindsController {
       return;
     }
 
-    // At position 0% (fully retracted), tilt adjustments are meaningless and would move the blind back down
-    const currentPosition = platformAccessory.states.Position ?? 0;
-    if (currentPosition === 0) {
+    // Near 0% (fully retracted), tilt adjustments are meaningless and would move the blind back down
+    if (targetPosition <= BLINDS_POSITION_TOLERANCE) {
       this.platform.logger.debug(
-        `   👍 "${name}" at 0%, skipping tilt adjustment`,
+        `   👍 "${name}" target is ${targetPosition}%, skipping tilt adjustment`,
       );
       return;
     }
