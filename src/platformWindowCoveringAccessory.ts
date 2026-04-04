@@ -526,6 +526,7 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
 
       newStates.TiltPosition = getTiltPositionFromTransforms(
         newValue.transformations,
+        (msg) => this.platform.logger.info(msg),
       );
 
       if (!isNaN(Position)) {
@@ -631,6 +632,7 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
       );
     }
 
+    const previousTilt = this.states.TiltPosition;
     this.states = newStates;
 
     // Notify blinds controller of position update (for state-based positioning)
@@ -640,7 +642,7 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
     }
 
     // Notify blinds controller of tilt update
-    if (this.onTiltUpdate && this.states.TiltPosition !== newStates.TiltPosition) {
+    if (this.onTiltUpdate && previousTilt !== newStates.TiltPosition) {
       this.onTiltUpdate(newStates.TiltPosition);
     }
 

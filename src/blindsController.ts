@@ -400,6 +400,9 @@ export class BlindsController {
         if (currentTilt === targetTilt) {
           clearTimeout(timeout);
           platformAccessory.onTiltUpdate = null;
+          // Force the state to stick — Loxone may transiently report the target
+          // then revert, but the physical slats are at the target position
+          platformAccessory.states.TiltPosition = targetTilt;
           resolve(true);
         }
       };
