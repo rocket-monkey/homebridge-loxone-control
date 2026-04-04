@@ -306,7 +306,7 @@ export class BlindsController {
       }
 
       // Extra settle: let the physical slats fully stabilize after stopping
-      await sleep(BLINDS_FINAL_POSITION_SETTLE);
+      await sleep(BLINDS_FINAL_POSITION_SETTLE * 2);
     }
 
     if (blindsType === "awning") {
