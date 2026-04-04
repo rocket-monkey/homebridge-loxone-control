@@ -390,8 +390,14 @@ export class LoxoneControlPlatform implements DynamicPlatformPlugin {
           const tiltAngles: Record<string, number> = { closed: -90, tilted: 0, open: 90 };
           const angle = tiltAngles[tilt];
           this.logger.info(`🌐 API: Scene "${params.name}" → position=${position}%, tilt="${tilt}"`);
-          // Simulate scene: set tilt first, then position (like HomeKit does)
+          // Simulate HomeKit scene: sends tilt angle, button, and position
+          // HomeKit also sends the tilt angle characteristic alongside button state
           await instance.setTargetTiltAngle(angle);
+          if (tilt === "tilted") {
+            instance.setTiltedOn(true);
+          } else if (tilt === "open") {
+            instance.setOpenedOn(true);
+          }
           await instance.setTargetPosition(position);
           this.jsonResponse(response, { ok: true, action: "scene", position, tilt, angle });
           return;

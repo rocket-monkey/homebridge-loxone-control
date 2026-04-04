@@ -1,4 +1,3 @@
-/* eslint-disable indent */
 import { BlindsTilt, BlindsType } from "./loxone/types.js";
 import { sendCommandSafe } from "./loxone/utils/sendCommand.js";
 import { sleep } from "./loxone/utils/sleep.js";
@@ -20,6 +19,7 @@ import {
 
 interface MoveBlindsToPositionParams {
   value: number;
+  tilt: BlindsTilt;
   platformAccessory: PlatformWindowCoveringAccessory;
 }
 
@@ -177,17 +177,11 @@ export class BlindsController {
   }
 
   moveBlindsToPositionNow = async (
-    { value, platformAccessory }: MoveBlindsToPositionParams,
+    { value, tilt, platformAccessory }: MoveBlindsToPositionParams,
     waitBeforeExecute = 0,
   ) => {
     try {
       await sleep(waitBeforeExecute);
-      const actualTilt = platformAccessory.getOpenedOn()
-        ? "open"
-        : platformAccessory.getTiltedOn()
-        ? "tilted"
-        : "closed";
-      const tilt = (value > 0 ? actualTilt : "closed") as BlindsTilt;
       const { accessory, identifier, states } = platformAccessory;
       const { actionUuid } = parseIdentifier(identifier);
       const { name } = accessory.context.device;
@@ -310,6 +304,9 @@ export class BlindsController {
           this.platform.logger.warn(`   ⚠️ "${name}" did not report stopped after ${20 * BLINDS_STOP_SETTLE_DELAY}ms, proceeding anyway`);
         }
       }
+
+      // Extra settle: let the physical slats fully stabilize after stopping
+      await sleep(BLINDS_FINAL_POSITION_SETTLE);
     }
 
     if (blindsType === "awning") {

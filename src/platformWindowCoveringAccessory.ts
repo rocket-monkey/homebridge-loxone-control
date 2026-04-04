@@ -293,6 +293,7 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
       this.platform.blindsController.moveBlindsToPosition({
         platformAccessory: this,
         value: currentPosition,
+        tilt,
       });
     }
   }
@@ -468,6 +469,7 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
     this.platform.blindsController.moveBlindsToPosition({
       platformAccessory: this,
       value,
+      tilt,
     });
   }
 
