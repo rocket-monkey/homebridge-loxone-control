@@ -33,7 +33,6 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
   public autoSunPosition = false;
   public lastAutoSunCommand = 0; // Timestamp of last command to prevent flickering
   public onPositionUpdate: ((position: number, isStopped: boolean) => void) | null = null;
-  public onTiltUpdate: ((tilt: BlindsTilt) => void) | null = null;
   private targetPositionTimer: ReturnType<typeof setTimeout> | null = null;
   private tiltTimer: ReturnType<typeof setTimeout> | null = null;
   private pendingTargetValue: number | null = null;
@@ -316,6 +315,33 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
 
   getOpenedOn(): CharacteristicValue {
     return this.opened;
+  }
+
+  applyTiltStateOptimistically(tilt: BlindsTilt) {
+    this.states.TiltPosition = tilt;
+    const tiltAngle = this.tiltPositionToAngle(tilt);
+    this.service?.updateCharacteristic(
+      this.platform.Characteristic.CurrentHorizontalTiltAngle,
+      tiltAngle,
+    );
+    this.service?.updateCharacteristic(
+      this.platform.Characteristic.TargetHorizontalTiltAngle,
+      tiltAngle,
+    );
+    if (this.slatService) {
+      const slatAngle = tilt === "tilted" ? 45 : tilt === "open" ? 90 : 0;
+      const slatState = tilt === "closed"
+        ? this.platform.Characteristic.CurrentSlatState.FIXED
+        : this.platform.Characteristic.CurrentSlatState.SWINGING;
+      this.slatService.updateCharacteristic(
+        this.platform.Characteristic.CurrentTiltAngle,
+        slatAngle,
+      );
+      this.slatService.updateCharacteristic(
+        this.platform.Characteristic.CurrentSlatState,
+        slatState,
+      );
+    }
   }
 
   getCurrentSlatState() {
@@ -634,18 +660,12 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
       );
     }
 
-    const previousTilt = this.states.TiltPosition;
     this.states = newStates;
 
     // Notify blinds controller of position update (for state-based positioning)
     if (this.onPositionUpdate) {
       const isStopped = newStates.PositionState === this.platform.Characteristic.PositionState.STOPPED;
       this.onPositionUpdate(newStates.Position ?? 0, isStopped);
-    }
-
-    // Notify blinds controller of tilt update
-    if (this.onTiltUpdate && previousTilt !== newStates.TiltPosition) {
-      this.onTiltUpdate(newStates.TiltPosition);
     }
 
     // Update Auto Sun Position state based on automation text messages

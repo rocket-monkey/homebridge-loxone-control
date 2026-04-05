@@ -11,8 +11,6 @@ import {
   BLINDS_FINAL_POSITION_SETTLE,
   BLINDS_TILT_PULSE_SHORT,
   BLINDS_TILT_PULSE_LONG,
-  BLINDS_TILT_SETTLE_DELAY,
-  BLINDS_TILT_MAX_RETRIES,
   BLINDS_POSITION_TOLERANCE,
   BLINDS_POSITION_TIMEOUT,
 } from "./settings.js";
@@ -339,75 +337,21 @@ export class BlindsController {
     const tiltSteps = Math.abs(targetIndex - currentIndex);
     const pulseDuration = tiltSteps > 1 ? BLINDS_TILT_PULSE_LONG : BLINDS_TILT_PULSE_SHORT;
 
-    // Pulse + verify loop: send a timed pulse, then wait for state confirmation
-    for (let attempt = 1; attempt <= BLINDS_TILT_MAX_RETRIES; attempt++) {
-      const reportedTilt = platformAccessory.states.TiltPosition || "closed";
-      if (reportedTilt === tilt) {
-        this.platform.logger.info(
-          `   ✅ "${name}" tilt verified at "${tilt}" after ${attempt - 1} pulse(s)`,
-        );
-        return;
-      }
+    // Loxone doesn't report tilt state back after pulse-based slat adjustment, so
+    // we send a single timed pulse and optimistically update the state.
+    this.platform.logger.info(
+      `   🕹️ "${name}" tilt pulse: "${currentTilt}" → "${tilt}" via ${tiltCommand} (${pulseDuration}ms)`,
+    );
+    await this.sendMoveJalousieCommand(platformAccessory, true, tiltCommand);
+    await sleep(pulseDuration);
+    await this.sendMoveJalousieCommand(platformAccessory, false, tiltCommand);
+    await sleep(BLINDS_STOP_SETTLE_DELAY);
 
-      this.platform.logger.info(
-        `   🕹️ "${name}" tilt pulse ${attempt}/${BLINDS_TILT_MAX_RETRIES}: "${reportedTilt}" → "${tilt}" via ${tiltCommand} (${pulseDuration}ms)`,
-      );
-
-      // Start movement, wait pulse duration, stop, let slats settle
-      await this.sendMoveJalousieCommand(platformAccessory, true, tiltCommand);
-      await sleep(pulseDuration);
-      await this.sendMoveJalousieCommand(platformAccessory, false, tiltCommand);
-      await sleep(BLINDS_STOP_SETTLE_DELAY);
-
-      // Wait for Loxone to confirm tilt state (with timeout fallback)
-      const confirmed = await this.waitForTiltState(platformAccessory, tilt);
-      if (confirmed) {
-        this.platform.logger.info(
-          `   ✅ "${name}" tilt confirmed at "${tilt}" after ${attempt} pulse(s)`,
-        );
-        return;
-      }
-    }
-
-    const finalTilt = platformAccessory.states.TiltPosition || "closed";
-    if (finalTilt === tilt) {
-      this.platform.logger.info(
-        `   ✅ "${name}" tilt verified at "${tilt}"`,
-      );
-    } else {
-      this.platform.logger.warn(
-        `   ⚠️ "${name}" tilt is "${finalTilt}" after ${BLINDS_TILT_MAX_RETRIES} retries, wanted "${tilt}"`,
-      );
-    }
+    platformAccessory.applyTiltStateOptimistically(tilt);
+    this.platform.logger.info(
+      `   ✅ "${name}" tilt set to "${tilt}" optimistically`,
+    );
   };
-
-  private waitForTiltState(
-    platformAccessory: PlatformWindowCoveringAccessory,
-    targetTilt: BlindsTilt,
-  ): Promise<boolean> {
-    // If already at target, return immediately
-    if ((platformAccessory.states.TiltPosition || "closed") === targetTilt) {
-      return Promise.resolve(true);
-    }
-
-    return new Promise((resolve) => {
-      const timeout = setTimeout(() => {
-        platformAccessory.onTiltUpdate = null;
-        resolve((platformAccessory.states.TiltPosition || "closed") === targetTilt);
-      }, BLINDS_TILT_SETTLE_DELAY);
-
-      platformAccessory.onTiltUpdate = (currentTilt: BlindsTilt) => {
-        if (currentTilt === targetTilt) {
-          clearTimeout(timeout);
-          platformAccessory.onTiltUpdate = null;
-          // Force the state to stick — Loxone may transiently report the target
-          // then revert, but the physical slats are at the target position
-          platformAccessory.states.TiltPosition = targetTilt;
-          resolve(true);
-        }
-      };
-    });
-  }
 
   sendMoveJalousieCommand = async (
     platformAccessory: PlatformWindowCoveringAccessory,

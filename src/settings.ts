@@ -35,5 +35,3 @@ export const BLINDS_POSITION_TIMEOUT = 120_000;
 // Tilt pulse: send command, wait pulse duration, send stop
 export const BLINDS_TILT_PULSE_SHORT = 800;  // 1 tilt step (closed↔tilted or tilted↔open)
 export const BLINDS_TILT_PULSE_LONG = 1500;  // 2 tilt steps (closed↔open)
-export const BLINDS_TILT_SETTLE_DELAY = 2000; // wait for Loxone to report new tilt after pulse
-export const BLINDS_TILT_MAX_RETRIES = 5;
