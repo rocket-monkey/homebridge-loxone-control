@@ -497,7 +497,6 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
     const newStates: States = {
       ...this.states,
       PositionState: this.platform.Characteristic.PositionState.STOPPED,
-      TiltPosition: "closed",
     };
 
     const newValue = Array.isArray(newValues) ? newValues[0] : newValues;
@@ -533,6 +532,9 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
         newStates.Position = Position;
       }
     } else {
+      // Non-stateText updates don't have transforms — preserve current tilt
+      newStates.TiltPosition = this.states.TiltPosition || "closed";
+
       const thirdValue = keys.length > 2 ? newValue[keys[2]] : 0;
       Position = Math.round((thirdValue ?? 0) * 100);
       if (!isNaN(Position)) {
