@@ -58,7 +58,8 @@ export class AccessoryBase {
     );
   };
 
-  setState = (newStates: States) => {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  setState = (newStates: States, stateText?: string) => {
     this.states = newStates;
   };
 }

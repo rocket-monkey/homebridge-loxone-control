@@ -1,10 +1,16 @@
 import { BlindsTilt } from "../types.js";
 
 /**
- * Parse tilt position from Loxone stateText.
- * Loxone reports slat state in German text:
+ * Parse tilt position from Loxone stateText (supports English and German).
+ *
+ * English:
+ *   "slats are horizontal" → closed
+ *   "slats are in shading position" / "shading" → tilted
+ *   "slats are vertical" → open
+ *
+ * German:
  *   "horizontale Lamellen" → closed
- *   "Lamellen auf Beschattung" → tilted (shading)
+ *   "Lamellen auf Beschattung" → tilted
  *   "vertikale Lamellen" → open
  */
 export const getTiltPositionFromStateText = (
@@ -15,11 +21,15 @@ export const getTiltPositionFromStateText = (
     return "closed";
   }
 
+  const text = stateText.toLowerCase();
+
   let result: BlindsTilt;
-  if (stateText.includes("vertikale Lamellen")) {
+  if (text.includes("vertical") || text.includes("vertikale")) {
     result = "open";
-  } else if (stateText.includes("Lamellen auf Beschattung")) {
+  } else if (text.includes("shading") || text.includes("beschattung")) {
     result = "tilted";
+  } else if (text.includes("horizontal") || text.includes("horizontale")) {
+    result = "closed";
   } else {
     result = "closed";
   }

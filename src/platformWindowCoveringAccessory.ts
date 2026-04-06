@@ -37,6 +37,7 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
   private tiltTimer: ReturnType<typeof setTimeout> | null = null;
   private pendingTargetValue: number | null = null;
   public movementStartTime = 0; // Timestamp when movement command was dispatched
+  public tiltCooldownUntil = 0; // Ignore stateText tilt updates until this timestamp
 
   constructor(
     public readonly platform: LoxoneControlPlatform,
@@ -319,6 +320,8 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
 
   applyTiltStateOptimistically(tilt: BlindsTilt) {
     this.states.TiltPosition = tilt;
+    // Ignore stateText tilt updates for 5s — Loxone may report stale tilt after pulse
+    this.tiltCooldownUntil = Date.now() + 5000;
     const tiltAngle = this.tiltPositionToAngle(tilt);
     this.service?.updateCharacteristic(
       this.platform.Characteristic.CurrentHorizontalTiltAngle,
@@ -518,7 +521,7 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
 
   // --- State updates from Loxone ---
 
-  setState = (givenValues: States) => {
+  setState = (givenValues: States, stateText?: string) => {
     const newValues = Array.isArray(givenValues) ? givenValues : [givenValues];
     const newStates: States = {
       ...this.states,
@@ -543,30 +546,22 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
       ? "down"
       : null;
 
-    let Position = 0;
-    if (newValue && newValue.stateText) {
-      Position = newValue.positionState
-        ? Math.round(newValue.positionState * 100)
-        : 0;
-
+    // Parse tilt from stateText when available, otherwise preserve current
+    if (stateText && Date.now() >= this.tiltCooldownUntil) {
       newStates.TiltPosition = getTiltPositionFromStateText(
-        newValue.stateText,
+        stateText,
         (msg) => this.platform.logger.info(msg),
       );
-
-      if (!isNaN(Position)) {
-        newStates.Position = Position;
-      }
     } else {
-      // Non-stateText updates don't have transforms — preserve current tilt
       newStates.TiltPosition = this.states.TiltPosition || "closed";
+    }
 
-      const thirdValue = keys.length > 2 ? newValue[keys[2]] : 0;
-      Position = Math.round((thirdValue ?? 0) * 100);
-      if (!isNaN(Position)) {
-        newStates.Position = Position;
-        newStates.TargetPosition = Position;
-      }
+    // Position comes from raw WS values (3rd key = position float)
+    const thirdValue = keys.length > 2 ? newValue[keys[2]] : undefined;
+    const Position = typeof thirdValue === "number" ? Math.round(thirdValue * 100) : NaN;
+    if (!isNaN(Position)) {
+      newStates.Position = Position;
+      newStates.TargetPosition = Position;
     }
 
     newStates.PositionState = isMoving
@@ -575,7 +570,7 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
         : this.platform.Characteristic.PositionState.INCREASING
       : this.platform.Characteristic.PositionState.STOPPED;
 
-    if (newStates.PositionState === 2) {
+    if (newStates.PositionState === 2 && !isNaN(Position)) {
       newStates.TargetPosition = Position;
     }
 

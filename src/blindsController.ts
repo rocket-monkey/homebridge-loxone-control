@@ -63,6 +63,13 @@ export class BlindsController {
         const commands = [...this.runCommands];
         this.runCommands = [];
 
+        // Cancel all active movements up front so blinds from a previous
+        // batch stop immediately instead of continuing during stagger delays
+        for (const command of commands) {
+          const { actionUuid } = parseIdentifier(command.platformAccessory.identifier);
+          this.cancelActiveMovement(actionUuid, command.platformAccessory);
+        }
+
         const promises = commands.map(async (command, index) => {
           const delay = index * BLINDS_COMMAND_STAGGER_DELAY;
           await this.moveBlindsToPositionNow(command, delay);
