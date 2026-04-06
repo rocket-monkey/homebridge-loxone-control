@@ -759,6 +759,10 @@ export class LoxoneControlPlatform implements DynamicPlatformPlugin {
     }
     
     if (existingInstance && !!newState) {
+      // Pass stateText through for Jalousie tilt detection
+      if (stateContainer.stateText && typeof newState === "object" && !Array.isArray(newState)) {
+        newState.stateText = stateContainer.stateText;
+      }
       existingInstance.setState(newState);
       return;
     }

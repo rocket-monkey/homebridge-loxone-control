@@ -47,6 +47,14 @@
         }
       }
       
+      // Read stateText from the component's processed states (getter property)
+      var stateText = null;
+      try {
+        if (obj.states && typeof obj.states.stateText === 'string') {
+          stateText = obj.states.stateText;
+        }
+      } catch (e) { /* getter may throw */ }
+
       // Extract only serializable data
       var safeData = {
         control: {
@@ -59,6 +67,7 @@
         },
         newVals: transformedVals,
         states: transformedVals, // Some accessories check states instead of newVals
+        stateText: stateText,
         version: obj.version,
         hasAllStates: obj.hasAllStates
       };

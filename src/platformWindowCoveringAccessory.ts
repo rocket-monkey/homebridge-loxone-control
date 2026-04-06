@@ -4,7 +4,7 @@ import { AccessoryBase } from "./accessoryBase.js";
 import { BlindsTilt, States } from "./loxone/types.js";
 import { LoxoneControlPlatform } from "./platform.js";
 import { AUTO_SUN_COOLDOWN } from "./settings.js";
-import { getTiltPositionFromTransforms } from "./loxone/utils/getTiltPositionFromTransforms.js";
+import { getTiltPositionFromStateText } from "./loxone/utils/getTiltPositionFromTransforms.js";
 import { sendCommandSafe } from "./loxone/utils/sendCommand.js";
 
 // Map tilt positions to angles (-90 to 90 range for HomeKit)
@@ -549,8 +549,8 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
         ? Math.round(newValue.positionState * 100)
         : 0;
 
-      newStates.TiltPosition = getTiltPositionFromTransforms(
-        newValue.transformations,
+      newStates.TiltPosition = getTiltPositionFromStateText(
+        newValue.stateText,
         (msg) => this.platform.logger.info(msg),
       );
 

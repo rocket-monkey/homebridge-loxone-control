@@ -32,6 +32,3 @@ export const AUTO_SUN_COOLDOWN = 1000;
 export const BLINDS_POSITION_TOLERANCE = 3;
 export const BLINDS_POSITION_TIMEOUT = 120_000;
 
-// Tilt pulse: send command, wait pulse duration, send stop
-export const BLINDS_TILT_PULSE_SHORT = 800;  // 1 tilt step (closed↔tilted or tilted↔open)
-export const BLINDS_TILT_PULSE_LONG = 1500;  // 2 tilt steps (closed↔open)

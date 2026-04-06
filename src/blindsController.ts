@@ -9,8 +9,6 @@ import {
   BLINDS_COMMAND_STAGGER_DELAY,
   BLINDS_STOP_SETTLE_DELAY,
   BLINDS_FINAL_POSITION_SETTLE,
-  BLINDS_TILT_PULSE_SHORT,
-  BLINDS_TILT_PULSE_LONG,
   BLINDS_POSITION_TOLERANCE,
   BLINDS_POSITION_TIMEOUT,
 } from "./settings.js";
@@ -319,38 +317,41 @@ export class BlindsController {
       return;
     }
 
-    // Determine if tilt needs adjustment and which direction to move
-    const currentTilt = platformAccessory.states.TiltPosition || "closed";
-    if (tilt === currentTilt) {
-      this.platform.logger.info(
-        `   👍 "${name}" tilt already at "${tilt}", no adjustment needed`,
-      );
-      return;
+    // Direction-aware tilt: after moving down slats are naturally "closed",
+    // after moving up they're naturally "open". Pulse durations differ accordingly.
+    if (isMovingDown) {
+      if (tilt === "closed") {
+        this.platform.logger.debug(`   👍 "${name}" tilt is closed, no adjustment needed`);
+        return;
+      } else if (tilt === "tilted") {
+        this.platform.logger.info(`   🕹️ "${name}" tilt: FullUp 300ms (closed → tilted)`);
+        await this.sendMoveJalousieCommand(platformAccessory, true, "FullUp");
+        await sleep(300);
+        await this.sendMoveJalousieCommand(platformAccessory, false, "FullUp");
+      } else if (tilt === "open") {
+        this.platform.logger.info(`   🕹️ "${name}" tilt: FullUp 1000ms (closed → open)`);
+        await this.sendMoveJalousieCommand(platformAccessory, true, "FullUp");
+        await sleep(1000);
+        await this.sendMoveJalousieCommand(platformAccessory, false, "FullUp");
+      }
+    } else {
+      if (tilt === "open") {
+        this.platform.logger.debug(`   👍 "${name}" tilt is open, no adjustment needed`);
+        return;
+      } else if (tilt === "tilted") {
+        this.platform.logger.info(`   🕹️ "${name}" tilt: FullDown 600ms (open → tilted)`);
+        await this.sendMoveJalousieCommand(platformAccessory, true, "FullDown");
+        await sleep(600);
+        await this.sendMoveJalousieCommand(platformAccessory, false, "FullDown");
+      } else if (tilt === "closed") {
+        this.platform.logger.info(`   🕹️ "${name}" tilt: FullDown 1000ms (open → closed)`);
+        await this.sendMoveJalousieCommand(platformAccessory, true, "FullDown");
+        await sleep(1000);
+        await this.sendMoveJalousieCommand(platformAccessory, false, "FullDown");
+      }
     }
 
-    // Tilt order: closed < tilted < open
-    // To go towards "open", move up (FullUp). To go towards "closed", move down (FullDown).
-    const tiltOrder: BlindsTilt[] = ["closed", "tilted", "open"];
-    const currentIndex = tiltOrder.indexOf(currentTilt);
-    const targetIndex = tiltOrder.indexOf(tilt);
-    const tiltCommand = targetIndex > currentIndex ? "FullUp" : "FullDown";
-    const tiltSteps = Math.abs(targetIndex - currentIndex);
-    const pulseDuration = tiltSteps > 1 ? BLINDS_TILT_PULSE_LONG : BLINDS_TILT_PULSE_SHORT;
-
-    // Loxone doesn't report tilt state back after pulse-based slat adjustment, so
-    // we send a single timed pulse and optimistically update the state.
-    this.platform.logger.info(
-      `   🕹️ "${name}" tilt pulse: "${currentTilt}" → "${tilt}" via ${tiltCommand} (${pulseDuration}ms)`,
-    );
-    await this.sendMoveJalousieCommand(platformAccessory, true, tiltCommand);
-    await sleep(pulseDuration);
-    await this.sendMoveJalousieCommand(platformAccessory, false, tiltCommand);
-    await sleep(BLINDS_STOP_SETTLE_DELAY);
-
     platformAccessory.applyTiltStateOptimistically(tilt);
-    this.platform.logger.info(
-      `   ✅ "${name}" tilt set to "${tilt}" optimistically`,
-    );
   };
 
   sendMoveJalousieCommand = async (
