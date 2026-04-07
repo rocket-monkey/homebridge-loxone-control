@@ -272,8 +272,7 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
   }
 
   applyDesiredTilt() {
-    if (!this.desiredTilt || this.desiredTilt === this.states.TiltPosition) {
-      this.desiredTilt = null;
+    if (!this.desiredTilt) {
       return;
     }
 

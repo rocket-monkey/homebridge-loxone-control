@@ -358,6 +358,12 @@ export class BlindsController {
     toTilt: BlindsTilt;
   }) => {
     const { name } = platformAccessory.accessory.context.device;
+    // At mechanical limits (0%/100%), stateText is unreliable — slats are physically closed
+    const position = platformAccessory.states.Position ?? 0;
+    const atLimit = position <= BLINDS_POSITION_TOLERANCE || position >= 100 - BLINDS_POSITION_TOLERANCE;
+    if (atLimit) {
+      fromTilt = "closed";
+    }
 
     if (fromTilt === toTilt) {
       this.platform.logger.debug(`   👍 "${name}" tilt: no transition needed (${fromTilt} → ${toTilt})`);
