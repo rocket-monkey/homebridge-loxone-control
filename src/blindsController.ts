@@ -384,8 +384,8 @@ export class BlindsController {
     // Single-step tilt transitions: [command, duration]
     const tiltSteps: Record<string, Record<string, [string, number]>> = {
       closed: { tilted: ["up", 470] },
-      tilted: { closed: ["down", 300], open: ["up", 300] },
-      open: { tilted: ["down", 300] },
+      tilted: { closed: ["down", 470], open: ["up", 470] },
+      open: { tilted: ["down", 470] },
     };
 
     // Build the path: direct step if available, otherwise go via "tilted" intermediate
