@@ -66,9 +66,20 @@ This is a Homebridge plugin that controls Loxone smart home systems through the 
 - **homebridge-lib**: Eve HomeKit characteristics support
 - **@homebridge/plugin-ui-utils**: Configuration UI support
 
-## Notes
+## Testing
 
-- No test framework is configured
+No test framework is configured. To test changes manually:
+
+1. Run `npm run watch` — builds, links locally, and watches for changes with nodemon
+2. Use the built-in HTTP API on port `18081` to send control commands:
+   - **Scene (position + tilt)**: `http://localhost:18081/api/blinds/scene?name=<deviceName>&position=<0-100>&tilt=<closed|tilted|open>`
+   - **Position only**: `http://localhost:18081/api/blinds/position?name=<deviceName>&position=<0-100>`
+   - **Tilt only**: `http://localhost:18081/api/blinds/tilt?name=<deviceName>&tilt=<closed|tilted|open>`
+   - **Button**: `http://localhost:18081/api/blinds/button?name=<deviceName>&button=<tilted|opened|shade>&value=<true|false>`
+   - **List accessories**: `http://localhost:18081/api/accessories`
+3. Monitor Homebridge logs for state updates and verify expected behavior
+
+## Notes
 - Uses ES modules (`"type": "module"` in package.json)
 - Scripts are copied to dist after build via `scripts/copyScripts.mjs`
 - Requires Node.js v18.20.4+, v20.12.2+, v20.18.0+, or v22.10.0+

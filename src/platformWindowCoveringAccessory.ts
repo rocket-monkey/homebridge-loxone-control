@@ -480,18 +480,33 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
     // Clear desiredTilt since it's being consumed by this position command
     this.desiredTilt = null;
 
-    if (
-      Math.abs(value - this.states.Position) < 6 &&
-      tilt === this.states.TiltPosition
-    ) {
+    const positionDelta = Math.abs(value - this.states.Position);
+    const tiltChanged = tilt !== this.states.TiltPosition;
+    const isFullTarget = value === 0 || value === 100;
+
+    // Skip only when position is very close, tilt unchanged, and not targeting a limit
+    if (positionDelta < 6 && !tiltChanged && !isFullTarget) {
       this.platform.logger.debug(
-        `   🚨 Too close, skip! ${JSON.stringify({
+        `   🚨 Too close and same tilt, skip! ${JSON.stringify({
           value,
           pos: this.states.Position,
           tilt,
           curr: this.states.TiltPosition,
         })}`,
       );
+      return;
+    }
+
+    // Position too close to move reliably, but tilt needs adjustment
+    if (positionDelta < 6 && tiltChanged && !isFullTarget) {
+      this.platform.logger.info(
+        `   🕹️ Position within tolerance (${this.states.Position}% → ${value}%), adjusting tilt only: "${this.states.TiltPosition}" → "${tilt}"`,
+      );
+      this.platform.blindsController.moveBlindsToPosition({
+        platformAccessory: this,
+        value: this.states.Position,
+        tilt,
+      });
       return;
     }
 

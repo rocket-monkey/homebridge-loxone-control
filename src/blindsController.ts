@@ -211,7 +211,7 @@ export class BlindsController {
         this.platform.logger.debug(
           `   🔥 Blinds "${name}" are already moving, stopping first before new command`,
         );
-        await sendCommandSafe(this.platform, identifier, [isMovingDown ? "FullDown" : "FullUp"]);
+        await sendCommandSafe(this.platform, identifier, ["stop"]);
         await sleep(BLINDS_STOP_SETTLE_DELAY);
       }
 
@@ -249,15 +249,13 @@ export class BlindsController {
       } else {
         // No position change needed, check if tilt needs adjustment
         if (tilt !== states.TiltPosition) {
-          this.platform.logger.debug(
-            `   🕹️ Move slat tilt angle only, from "${states.TiltPosition}" to "${tilt}"`,
+          this.platform.logger.info(
+            `   🕹️ Tilt-only adjustment: "${states.TiltPosition}" → "${tilt}"`,
           );
-          await this.moveBlindsToFinalPosition({
+          await this.adjustTiltFromCurrentState({
             platformAccessory,
-            isMovingDown: true,
-            tilt,
-            blindsType,
-            targetPosition: value,
+            fromTilt: states.TiltPosition || "closed",
+            toTilt: tilt,
           });
         } else {
           this.platform.logger.debug(
@@ -290,11 +288,10 @@ export class BlindsController {
     // Stop the blind if it's still moving (it may still be in motion when position-watching triggers)
     const isStopped = posState === this.platform.Characteristic.PositionState.STOPPED;
     if (!isStopped) {
-      const stopCmd = isMovingDown ? "FullDown" : "FullUp";
       this.platform.logger.info(
-        `   ⏹️ "${name}" still moving, sending stop command (${stopCmd})`,
+        `   ⏹️ "${name}" still moving, sending stop command`,
       );
-      await this.sendMoveJalousieCommand(platformAccessory, false, stopCmd);
+      await this.sendMoveJalousieCommand(platformAccessory, false);
 
       // Wait for Loxone to confirm the blind has actually stopped
       const stoppedState = this.platform.Characteristic.PositionState.STOPPED;
@@ -324,41 +321,85 @@ export class BlindsController {
       return;
     }
 
-    // Direction-aware tilt: after moving down slats are naturally "closed",
-    // after moving up they're naturally "open". Pulse durations differ accordingly.
-    if (isMovingDown) {
-      if (tilt === "closed") {
-        this.platform.logger.debug(`   👍 "${name}" tilt is closed, no adjustment needed`);
-        return;
-      } else if (tilt === "tilted") {
-        this.platform.logger.info(`   🕹️ "${name}" tilt: FullUp 300ms (closed → tilted)`);
-        await this.sendMoveJalousieCommand(platformAccessory, true, "FullUp");
-        await sleep(300);
-        await this.sendMoveJalousieCommand(platformAccessory, false, "FullUp");
-      } else if (tilt === "open") {
-        this.platform.logger.info(`   🕹️ "${name}" tilt: FullUp 1000ms (closed → open)`);
-        await this.sendMoveJalousieCommand(platformAccessory, true, "FullUp");
-        await sleep(1000);
-        await this.sendMoveJalousieCommand(platformAccessory, false, "FullUp");
-      }
-    } else {
-      if (tilt === "open") {
-        this.platform.logger.debug(`   👍 "${name}" tilt is open, no adjustment needed`);
-        return;
-      } else if (tilt === "tilted") {
-        this.platform.logger.info(`   🕹️ "${name}" tilt: FullDown 600ms (open → tilted)`);
-        await this.sendMoveJalousieCommand(platformAccessory, true, "FullDown");
-        await sleep(600);
-        await this.sendMoveJalousieCommand(platformAccessory, false, "FullDown");
-      } else if (tilt === "closed") {
-        this.platform.logger.info(`   🕹️ "${name}" tilt: FullDown 1000ms (open → closed)`);
-        await this.sendMoveJalousieCommand(platformAccessory, true, "FullDown");
-        await sleep(1000);
-        await this.sendMoveJalousieCommand(platformAccessory, false, "FullDown");
-      }
+    // Use actual tilt state if available, otherwise infer from movement direction:
+    // after moving down slats are naturally "closed", after moving up they're "open".
+    const currentTilt = platformAccessory.states.TiltPosition
+      || (isMovingDown ? "closed" : "open");
+
+    if (currentTilt === tilt) {
+      this.platform.logger.debug(`   👍 "${name}" tilt is already "${tilt}", no adjustment needed`);
+      return;
     }
 
-    platformAccessory.applyTiltStateOptimistically(tilt);
+    await this.applyTiltPulses(platformAccessory, currentTilt, tilt);
+  };
+
+  /**
+   * Adjust tilt from the actual current tilt state (for tilt-only changes without position movement).
+   * Unlike moveBlindsToFinalPosition which assumes a natural starting tilt based on movement direction,
+   * this method handles all tilt transitions including from the "tilted" (shading) state.
+   */
+  adjustTiltFromCurrentState = async ({
+    platformAccessory,
+    fromTilt,
+    toTilt,
+  }: {
+    platformAccessory: PlatformWindowCoveringAccessory;
+    fromTilt: BlindsTilt;
+    toTilt: BlindsTilt;
+  }) => {
+    const { name } = platformAccessory.accessory.context.device;
+
+    if (fromTilt === toTilt) {
+      this.platform.logger.debug(`   👍 "${name}" tilt: no transition needed (${fromTilt} → ${toTilt})`);
+      return;
+    }
+
+    this.platform.logger.info(`   🕹️ "${name}" tilt-only: ${fromTilt} → ${toTilt}`);
+    await this.applyTiltPulses(platformAccessory, fromTilt, toTilt);
+  };
+
+  /**
+   * Apply tilt pulses to transition between tilt states.
+   * Uses "up"/"down" toggle commands (not FullUp/FullDown which move to limits).
+   * For full transitions (closed↔open), chains two short pulses via "tilted" intermediate
+   * to avoid overshooting into position movement.
+   */
+  private applyTiltPulses = async (
+    platformAccessory: PlatformWindowCoveringAccessory,
+    fromTilt: BlindsTilt,
+    toTilt: BlindsTilt,
+  ) => {
+    const { name } = platformAccessory.accessory.context.device;
+
+    // Single-step tilt transitions: [command, duration]
+    const tiltSteps: Record<string, Record<string, [string, number]>> = {
+      closed: { tilted: ["up", 300] },
+      tilted: { closed: ["down", 300], open: ["up", 700] },
+      open: { tilted: ["down", 600] },
+    };
+
+    // Build the path: direct step if available, otherwise go via "tilted" intermediate
+    const directStep = tiltSteps[fromTilt]?.[toTilt];
+    const fromToTilted = tiltSteps[fromTilt]?.tilted;
+    const tiltedToTarget = tiltSteps.tilted?.[toTilt];
+    const steps: [string, number, string, string][] = directStep
+      ? [[directStep[0], directStep[1], fromTilt, toTilt]]
+      : fromToTilted && tiltedToTarget
+        ? [
+          [fromToTilted[0], fromToTilted[1], fromTilt, "tilted"],
+          [tiltedToTarget[0], tiltedToTarget[1], "tilted", toTilt],
+        ]
+        : [];
+
+    for (const [command, duration, from, to] of steps) {
+      this.platform.logger.info(`   🕹️ "${name}" tilt: ${command} ${duration}ms (${from} → ${to})`);
+      await this.sendMoveJalousieCommand(platformAccessory, true, command);
+      await sleep(duration);
+      await this.sendMoveJalousieCommand(platformAccessory, false);
+    }
+
+    platformAccessory.applyTiltStateOptimistically(toTilt);
   };
 
   sendMoveJalousieCommand = async (
@@ -373,7 +414,7 @@ export class BlindsController {
     await sendCommandSafe(
       this.platform,
       platformAccessory.identifier,
-      [command],
+      [shouldMove ? command : "stop"],
     );
   };
 }
