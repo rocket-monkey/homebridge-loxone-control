@@ -149,11 +149,15 @@ export class BlindsController {
         resolve();
       }, BLINDS_POSITION_TIMEOUT);
 
+      // Ignore early "stopped" reports — the blind needs time to start moving after the command
+      const moveStartTime = Date.now();
+      const MOVE_GRACE_PERIOD = 2000;
+
       platformAccessory.onPositionUpdate = (position: number, isStopped: boolean) => {
         // Check if we've reached the target (within tolerance)
         if (Math.abs(position - targetPosition) <= BLINDS_POSITION_TOLERANCE) {
           onReached();
-        } else if (isStopped) {
+        } else if (isStopped && Date.now() - moveStartTime > MOVE_GRACE_PERIOD) {
           // Blind stopped before reaching target (obstacle, manual stop, etc.)
           this.platform.logger.warn(
             `⚠️ "${name}" stopped at ${position}%, target was ${targetPosition}%`,
@@ -205,14 +209,20 @@ export class BlindsController {
         states.PositionState !==
         this.platform.Characteristic.PositionState.STOPPED;
 
-      // If blind is already moving, any command will stop it first (hardware behavior).
-      // So we send a stop command, wait for it to settle, then send the new movement.
+      // If blind is already moving, stop it and wait for confirmed stop before sending new command.
       if (isAlreadyRunning) {
         this.platform.logger.debug(
           `   🔥 Blinds "${name}" are already moving, stopping first before new command`,
         );
         await sendCommandSafe(this.platform, identifier, ["stop"]);
-        await sleep(BLINDS_STOP_SETTLE_DELAY);
+        // Wait until the blind actually reports stopped (up to 10s)
+        const stoppedState = this.platform.Characteristic.PositionState.STOPPED;
+        for (let i = 0; i < 20; i++) {
+          await sleep(BLINDS_STOP_SETTLE_DELAY);
+          if (states.PositionState === stoppedState) {
+            break;
+          }
+        }
       }
 
       const stepsToTarget = Math.abs(steps);
@@ -228,7 +238,7 @@ export class BlindsController {
         await this.sendMoveJalousieCommand(
           platformAccessory,
           true,
-          isMovingDown ? "FullDown" : "FullUp",
+          isMovingDown ? "down" : "up",
         );
 
         if (targetIsFullyDownOrUp) {
@@ -321,10 +331,9 @@ export class BlindsController {
       return;
     }
 
-    // Use actual tilt state if available, otherwise infer from movement direction:
-    // after moving down slats are naturally "closed", after moving up they're "open".
-    const currentTilt = platformAccessory.states.TiltPosition
-      || (isMovingDown ? "closed" : "open");
+    // After position movement, infer tilt from direction (stateText is unreliable during movement):
+    // moving down → slats are physically closed, moving up → slats are physically open.
+    const currentTilt: BlindsTilt = isMovingDown ? "closed" : "open";
 
     if (currentTilt === tilt) {
       this.platform.logger.debug(`   👍 "${name}" tilt is already "${tilt}", no adjustment needed`);
@@ -374,9 +383,9 @@ export class BlindsController {
 
     // Single-step tilt transitions: [command, duration]
     const tiltSteps: Record<string, Record<string, [string, number]>> = {
-      closed: { tilted: ["up", 300] },
-      tilted: { closed: ["down", 300], open: ["up", 700] },
-      open: { tilted: ["down", 600] },
+      closed: { tilted: ["up", 470] },
+      tilted: { closed: ["down", 300], open: ["up", 300] },
+      open: { tilted: ["down", 300] },
     };
 
     // Build the path: direct step if available, otherwise go via "tilted" intermediate
@@ -405,7 +414,7 @@ export class BlindsController {
   sendMoveJalousieCommand = async (
     platformAccessory: PlatformWindowCoveringAccessory,
     shouldMove: boolean,
-    command = "FullDown",
+    command = "down",
     failOver = 0,
   ) => {
     if (failOver > 1) {

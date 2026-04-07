@@ -10,7 +10,7 @@ export const PLUGIN_NAME = "homebridge-loxone-control";
 
 // Timing constants (milliseconds)
 export const BLINDS_DEBOUNCE_DELAY = 500;
-export const BLINDS_COMMAND_STAGGER_DELAY = 600;
+export const BLINDS_COMMAND_STAGGER_DELAY = 800;
 export const BLINDS_TILT_RESET_BUFFER = 1000;
 export const BLINDS_STOP_SETTLE_DELAY = 500;
 export const BLINDS_FINAL_POSITION_SETTLE = 800;

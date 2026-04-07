@@ -300,7 +300,13 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
 
   setTiltedOn(value: CharacteristicValue) {
     this.tilted = value as boolean;
-    this.desiredTilt = this.opened ? "open" : this.tilted ? "tilted" : "closed";
+    if (this.tilted) {
+      // Tilted switch explicitly turned on — override any previous tilt state
+      this.desiredTilt = "tilted";
+      this.opened = false;
+    } else {
+      this.desiredTilt = this.opened ? "open" : "closed";
+    }
     this.restartPendingPosition();
   }
 
@@ -310,7 +316,13 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
 
   setOpenedOn(value: CharacteristicValue) {
     this.opened = value as boolean;
-    this.desiredTilt = this.opened ? "open" : this.tilted ? "tilted" : "closed";
+    if (this.opened) {
+      // Opened switch explicitly turned on — override any previous tilt state
+      this.desiredTilt = "open";
+      this.tilted = false;
+    } else {
+      this.desiredTilt = this.tilted ? "tilted" : "closed";
+    }
     this.restartPendingPosition();
   }
 
