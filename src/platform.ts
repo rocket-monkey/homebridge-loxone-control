@@ -426,6 +426,33 @@ export class LoxoneControlPlatform implements DynamicPlatformPlugin {
           return;
         }
 
+        case "/api/blinds/raw": {
+          // Diagnostic probe: send a single raw command to the blind, optionally followed by a stop after N ms.
+          // No state inference, no logic — just fires the command and returns. Use to discover what individual
+          // commands physically do from a known state.
+          //   ?name=Office%20Blinds&command=up&durationMs=470
+          const instance = params.name ? this.findInstanceByName(params.name) : null;
+          if (!instance || !(instance instanceof PlatformWindowCoveringAccessory)) {
+            this.jsonResponse(response, { error: "Blinds accessory not found", name: params.name }, 404);
+            return;
+          }
+          const command = params.command;
+          if (!command || !["up", "down", "stop"].includes(command)) {
+            this.jsonResponse(response, { error: "Invalid command (up, down, stop)" }, 400);
+            return;
+          }
+          const durationMs = params.durationMs ? parseInt(params.durationMs) : 0;
+          this.logger.info(`🔬 RAW probe: "${params.name}" send "${command}"${durationMs > 0 ? ` then stop after ${durationMs}ms` : ""}`);
+          await sendCommandSafe(this, instance.identifier, [command]);
+          if (command !== "stop" && durationMs > 0) {
+            await sleep(durationMs);
+            await sendCommandSafe(this, instance.identifier, ["stop"]);
+            this.logger.info(`🔬 RAW probe: "${params.name}" sent stop after ${durationMs}ms`);
+          }
+          this.jsonResponse(response, { ok: true, action: "raw", command, durationMs });
+          return;
+        }
+
         case "/api/light/on": {
           const instance = params.name ? this.findInstanceByName(params.name) : null;
           if (!instance || !(instance instanceof PlatformLightAccessory)) {

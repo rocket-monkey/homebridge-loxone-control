@@ -331,9 +331,7 @@ export class BlindsController {
       return;
     }
 
-    // After position movement, infer tilt from direction (gravity wins over stateText,
-    // which can lie — e.g. from 0% down it keeps reporting "vertical" while the slats
-    // have already physically settled to horizontal/closed):
+    // After position movement, infer tilt from direction:
     // moving down → slats are physically closed, moving up → slats are physically open.
     const currentTilt: BlindsTilt = isMovingDown ? "closed" : "open";
 

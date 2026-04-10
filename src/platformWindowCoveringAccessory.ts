@@ -30,6 +30,10 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
   public tilted = false;
   public opened = false;
   public desiredTilt: BlindsTilt | null = null; // Desired tilt angle, applied after movement completes
+  // When a dedicated tilt switch (Tilted/Opened) is toggled ON, the WindowCovering tilt slider
+  // will ignore writes until this timestamp — prevents scene-firing races where the slider
+  // arrives after the switch and overwrites the explicit user intent.
+  private explicitSwitchUntil = 0;
   public autoSunPosition = false;
   public lastAutoSunCommand = 0; // Timestamp of last command to prevent flickering
   public onPositionUpdate: ((position: number, isStopped: boolean) => void) | null = null;
@@ -222,6 +226,15 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
     const angle = value as number;
     const { name } = this.accessory.context.device;
 
+    // If a dedicated Tilted/Opened switch was just toggled ON (typical scene firing),
+    // it represents more specific user intent than the slider — let it win.
+    if (Date.now() < this.explicitSwitchUntil) {
+      this.platform.logger.info(
+        `🔄 ${name}: Ignoring tilt slider (angle: ${angle}) — explicit Tilted/Opened switch active`,
+      );
+      return;
+    }
+
     // Map angle ranges to tilt positions:
     // -90 to -30: closed, -30 to 30: tilted, 30 to 90: open
     let targetTilt: BlindsTilt;
@@ -303,6 +316,7 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
       // Tilted switch explicitly turned on — override any previous tilt state
       this.desiredTilt = "tilted";
       this.opened = false;
+      this.explicitSwitchUntil = Date.now() + 2000;
     } else {
       this.desiredTilt = this.opened ? "open" : "closed";
     }
@@ -319,6 +333,7 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
       // Opened switch explicitly turned on — override any previous tilt state
       this.desiredTilt = "open";
       this.tilted = false;
+      this.explicitSwitchUntil = Date.now() + 2000;
     } else {
       this.desiredTilt = this.tilted ? "tilted" : "closed";
     }
