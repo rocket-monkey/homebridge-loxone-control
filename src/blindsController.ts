@@ -331,12 +331,17 @@ export class BlindsController {
       return;
     }
 
-    // After position movement, infer tilt from direction (stateText is unreliable during movement):
+    // After position movement, infer tilt from direction (gravity wins over stateText,
+    // which can lie — e.g. from 0% down it keeps reporting "vertical" while the slats
+    // have already physically settled to horizontal/closed):
     // moving down → slats are physically closed, moving up → slats are physically open.
     const currentTilt: BlindsTilt = isMovingDown ? "closed" : "open";
 
     if (currentTilt === tilt) {
       this.platform.logger.debug(`   👍 "${name}" tilt is already "${tilt}", no adjustment needed`);
+      // stateText may have reported a different tilt during movement; override the displayed
+      // state so HomeKit reflects physical reality.
+      platformAccessory.applyTiltStateOptimistically(tilt);
       return;
     }
 
