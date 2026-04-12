@@ -8,9 +8,12 @@ export const sendCommand = async (
   platform.logger.debug(
     `   🔌 sendCommand over websocket: ${JSON.stringify(args)}`
   );
-  const jsError = await platform
-    .getLoxoneWebinterface()
-    ?.evaluate((passedIdentifier: string, ...passedArgs) => {
+  const webinterface = platform.getLoxoneWebinterfaceInstance();
+  if (!webinterface) {
+    return null;
+  }
+  const jsError = await webinterface
+    .safeEvaluate((passedIdentifier: string, ...passedArgs) => {
       try {
         // @ts-expect-error patched
         let control = window.collection.find((c) => {

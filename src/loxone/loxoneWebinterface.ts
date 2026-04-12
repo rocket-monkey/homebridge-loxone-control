@@ -17,7 +17,19 @@ import {
   COLLECTION_POLL_INTERVAL,
   COLLECTION_MAX_ATTEMPTS,
   STANDBY_PREVENT_INTERVAL,
+  EVALUATE_TIMEOUT,
+  HEALTH_CHECK_INTERVAL,
+  RECOVERY_CLOSE_TIMEOUT,
+  SESSION_RESTORE_PROBE_TIMEOUT,
 } from "../settings.js";
+
+// In-memory snapshot of a successful Loxone session. Used to skip the full
+// form-based login on re-init (e.g. after a Puppeteer-hang recovery) — saves
+// ~7s of form wait + credential typing + JS-init sleep.
+interface SavedSession {
+  cookies: Parameters<Page["setCookie"]>[0][];
+  localStorage: Record<string, string>;
+}
 
 const __dirname = import.meta.dirname;
 const BROWSER_LOG = false; // set to true to log browser console messages
@@ -46,6 +58,9 @@ export class LoxoneWebinterface {
 
   private interval: ReturnType<typeof setInterval> | undefined;
   private preventStandbyInterval: ReturnType<typeof setInterval> | undefined;
+  private healthCheckInterval: ReturnType<typeof setInterval> | undefined;
+  private isRecovering = false;
+  private savedSession: SavedSession | null = null;
 
   constructor(public readonly platform: LoxoneControlPlatform) {
     this.platform.logger.debug("LoxoneWebinterface constructor");
@@ -58,6 +73,16 @@ export class LoxoneWebinterface {
     if (!serverUrl || !user || !password) {
       this.platform.logger.error("❌ Missing credentials - serverUrl, user or password not configured");
       return;
+    }
+    // Clear stale intervals from a previous init (e.g. after recovery), otherwise
+    // refreshLogin/preventStandby would run against both the old and new pages.
+    if (this.interval) {
+      clearInterval(this.interval);
+      this.interval = undefined;
+    }
+    if (this.preventStandbyInterval) {
+      clearInterval(this.preventStandbyInterval);
+      this.preventStandbyInterval = undefined;
     }
     this.platform.logger.info("🚀 Initializing loxone web interface..");
     if (DEBUG_MODE) {
@@ -307,56 +332,102 @@ export class LoxoneWebinterface {
         this.platform.logger.error("❌ Page not available for login");
         return;
       }
-      
+
       const startTime = Date.now();
       if (DEBUG_MODE) {
         this.platform.logger.info(`🔍 Navigating to: ${serverUrl}`);
       }
-      
-      // login to loxone miniserver
-      this.platform.logger.info("🔍 Navigating to Loxone web interface...");
-      // Don't await goto — just fire and wait for the login form
-      this.page.goto(serverUrl).catch((e: any) => {
-        this.platform.logger.info(`🔍 goto catch: ${e.message}`);
-      });
 
-      // Wait for the login form — use waitForSelector which listens via CDP
-      // without needing JS execution on the main thread
-      this.platform.logger.info("🔍 Waiting for login form...");
-      try {
-        await this.page.waitForSelector("input[type=text]", { timeout: NAVIGATION_TIMEOUT });
-      } catch {
-        this.platform.logger.error("❌ Login form never appeared - retrying with extended timeout...");
-        // Try once more with a longer timeout — the huge comps.js can take very long
-        await this.page.waitForSelector("input[type=text]", { timeout: NAVIGATION_RETRY_TIMEOUT });
+      // Try session restore first — if we have a previous saved session, inject
+      // cookies + localStorage before navigating. If the session is still valid,
+      // Loxone skips the login form and goes straight to the app.
+      let sessionRestored = false;
+      if (this.savedSession && this.savedSession.cookies.length > 0) {
+        this.platform.logger.info("♻️  Attempting session restore from saved cookies...");
+        try {
+          if (this.savedSession.cookies.length > 0) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            await this.page.setCookie(...(this.savedSession.cookies as any));
+          }
+          const lsSnapshot = this.savedSession.localStorage;
+          await this.page.evaluateOnNewDocument((entries: Record<string, string>) => {
+            for (const [key, val] of Object.entries(entries)) {
+              localStorage.setItem(key, val);
+            }
+          }, lsSnapshot);
+
+          this.page.goto(serverUrl).catch((e: any) => {
+            this.platform.logger.info(`🔍 goto catch: ${e.message}`);
+          });
+
+          // Race the login form against a short probe timeout.
+          // Form visible → session expired, fall through to full login.
+          // No form within the probe window → assume session is valid.
+          try {
+            await this.page.waitForSelector("input[type=text]", { timeout: SESSION_RESTORE_PROBE_TIMEOUT });
+            this.platform.logger.info("♻️  Saved session expired — login form reappeared, falling back to full login");
+            this.savedSession = null;
+          } catch {
+            sessionRestored = true;
+            this.platform.logger.info(`♻️  Session restored in ${Date.now() - startTime}ms — skipping form login`);
+          }
+        } catch (e: any) {
+          this.platform.logger.warn(`♻️  Session restore failed: ${e.message} — falling back to full login`);
+          this.savedSession = null;
+        }
       }
-      this.platform.logger.info(`✅ Login form appeared in ${Date.now() - startTime}ms`);
 
-      // Wait for JS framework to fully initialize event handlers
-      this.platform.logger.info("🔍 Waiting for page JS to initialize...");
-      await sleep(LOGIN_JS_INIT_DELAY);
-
-      // Use the same approach as v1.5.5: page.type + page.click
-      this.platform.logger.info("🔍 Typing credentials...");
-      await this.page.type("input[type=text]", user);
-      await this.page.type("input[type=password]", password);
-
-      const usernameVal = await this.page.$eval("input[type=text]", (el: any) => el.value);
-      const passwordVal = await this.page.$eval("input[type=password]", (el: any) => el.value);
-      this.platform.logger.info(`🔍 Field values - username: "${usernameVal}" (${usernameVal.length}), password: ${passwordVal.length} chars`);
-
-      this.platform.logger.info("🔍 Submitting login...");
       const navigationStart = Date.now();
-      await this.page.click("button[type=submit]");
+      if (!sessionRestored) {
+        // login to loxone miniserver
+        this.platform.logger.info("🔍 Navigating to Loxone web interface...");
+        // Don't await goto — just fire and wait for the login form
+        this.page.goto(serverUrl).catch((e: any) => {
+          this.platform.logger.info(`🔍 goto catch: ${e.message}`);
+        });
 
-      // After login, the Loxone web app loads the massive comps.js (14-16MB)
-      // which blocks Chrome's main thread. We can't use waitForFunction/evaluate
-      // during this time. Instead, wait for the intercepted comps.js to be served
-      // and give Chrome time to parse it.
-      // Wait for the post-login page to load (comps.js parsing takes time)
-      this.platform.logger.info("🔍 Waiting for Loxone web interface to load...");
-      await sleep(LOGIN_POST_SUBMIT_DELAY);
-      this.platform.logger.info(`✅ Login flow completed in ${Date.now() - navigationStart}ms`);
+        // Wait for the login form — use waitForSelector which listens via CDP
+        // without needing JS execution on the main thread
+        this.platform.logger.info("🔍 Waiting for login form...");
+        try {
+          await this.page.waitForSelector("input[type=text]", { timeout: NAVIGATION_TIMEOUT });
+        } catch {
+          this.platform.logger.error("❌ Login form never appeared - retrying with extended timeout...");
+          // Try once more with a longer timeout — the huge comps.js can take very long
+          await this.page.waitForSelector("input[type=text]", { timeout: NAVIGATION_RETRY_TIMEOUT });
+        }
+        this.platform.logger.info(`✅ Login form appeared in ${Date.now() - startTime}ms`);
+
+        // Wait for JS framework to fully initialize event handlers
+        this.platform.logger.info("🔍 Waiting for page JS to initialize...");
+        await sleep(LOGIN_JS_INIT_DELAY);
+
+        // Use the same approach as v1.5.5: page.type + page.click
+        this.platform.logger.info("🔍 Typing credentials...");
+        await this.page.type("input[type=text]", user);
+        await this.page.type("input[type=password]", password);
+
+        const usernameVal = await this.page.$eval("input[type=text]", (el: any) => el.value);
+        const passwordVal = await this.page.$eval("input[type=password]", (el: any) => el.value);
+        this.platform.logger.info(`🔍 Field values - username: "${usernameVal}" (${usernameVal.length}), password: ${passwordVal.length} chars`);
+
+        this.platform.logger.info("🔍 Submitting login...");
+        await this.page.click("button[type=submit]");
+
+        // After login, the Loxone web app loads the massive comps.js (14-16MB)
+        // which blocks Chrome's main thread. We can't use waitForFunction/evaluate
+        // during this time. Instead, wait for the intercepted comps.js to be served
+        // and give Chrome time to parse it.
+        // Wait for the post-login page to load (comps.js parsing takes time)
+        this.platform.logger.info("🔍 Waiting for Loxone web interface to load...");
+        await sleep(LOGIN_POST_SUBMIT_DELAY);
+      } else {
+        // Session restored: comps.js still needs to parse but we skipped form/typing/js-init.
+        // Wait the post-submit delay anyway since comps.js parsing is unavoidable on a fresh page.
+        // (V8's code cache inside a still-alive browser process makes this much faster.)
+        await sleep(LOGIN_POST_SUBMIT_DELAY);
+      }
+      this.platform.logger.info(`✅ Login flow completed in ${Date.now() - navigationStart}ms${sessionRestored ? " (session restore)" : ""}`);
       await sleep(LOGIN_POST_LOAD_DELAY);
 
       // random number between 0 and 60 seconds
@@ -380,6 +451,7 @@ export class LoxoneWebinterface {
       // Wait for the patched comps.js to initialize window.collection
       this.platform.logger.info("🔍 Waiting for device collection to be available...");
       let allCollectedComponents: any;
+      const pollStart = Date.now();
       for (let i = 0; i < COLLECTION_MAX_ATTEMPTS; i++) {
         await sleep(COLLECTION_POLL_INTERVAL);
         try {
@@ -388,7 +460,7 @@ export class LoxoneWebinterface {
             return window.collection;
           });
           if (allCollectedComponents && allCollectedComponents.length > 0) {
-            this.platform.logger.info(`✅ Collection ready with ${allCollectedComponents.length} components after ${(i + 1) * 5}s`);
+            this.platform.logger.info(`✅ Collection ready with ${allCollectedComponents.length} components after ${Math.round((Date.now() - pollStart) / 1000)}s`);
             break;
           }
         } catch {
@@ -410,6 +482,10 @@ export class LoxoneWebinterface {
         this.collectedComponents.map((c) => c.identifier),
       );
       this.platform.onReady();
+      this.startHealthCheck();
+      // Snapshot cookies + localStorage so the next init() (e.g. after a recovery)
+      // can skip the form-based login entirely. In-memory only — not persisted to disk.
+      await this.captureSession();
     } catch (e: any) {
       this.platform.logger.error("❌ Error during login!");
       this.platform.logger.error(`🔍 Error type: ${e.constructor.name}`);
@@ -443,6 +519,201 @@ export class LoxoneWebinterface {
         }
       }
     }
+  }
+
+  /**
+   * Run a page.evaluate with a hard timeout. If the underlying Chrome CDP call hangs
+   * (the classic "Runtime.callFunctionOn timed out" symptom), kick off a recovery and
+   * return null to the caller so it can fail fast instead of blocking on the 5-minute
+   * protocol timeout. Returns null during recovery and if the page is not yet ready.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async safeEvaluate<T>(fn: (...args: any[]) => T, ...args: any[]): Promise<T | null> {
+    if (this.isRecovering || !this.page) {
+      return null;
+    }
+    const page = this.page;
+    let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const result = await Promise.race([
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        page.evaluate(fn as any, ...args),
+        new Promise<never>((_, reject) => {
+          timeoutHandle = setTimeout(
+            () => reject(new Error(`evaluate exceeded ${EVALUATE_TIMEOUT}ms`)),
+            EVALUATE_TIMEOUT,
+          );
+        }),
+      ]);
+      if (timeoutHandle) {
+        clearTimeout(timeoutHandle);
+      }
+      return result as T;
+    } catch (e: unknown) {
+      if (timeoutHandle) {
+        clearTimeout(timeoutHandle);
+      }
+      const msg = (e as Error)?.message ?? String(e);
+      const isHang =
+        msg.includes("exceeded") ||
+        msg.includes("Runtime.callFunctionOn") ||
+        msg.includes("Target closed") ||
+        msg.includes("Protocol error") ||
+        msg.includes("Session closed");
+      if (isHang) {
+        this.platform.logger.error(`🚨 Puppeteer hang detected: ${msg}`);
+        // Fire-and-forget — don't block the caller on recovery
+        this.triggerRecovery().catch(() => { /* already logged */ });
+      } else {
+        this.platform.logger.error(`❌ safeEvaluate error (non-hang): ${msg}`);
+      }
+      return null;
+    }
+  }
+
+  /**
+   * Snapshot cookies + localStorage from the live page into memory so a subsequent
+   * init() (e.g. recovery) can skip the form-based login.
+   */
+  private async captureSession() {
+    if (!this.page) {
+      return;
+    }
+    try {
+      const cookies = await this.page.cookies();
+      const localStorage = await this.page.evaluate(() => {
+        const out: Record<string, string> = {};
+        for (let i = 0; i < window.localStorage.length; i++) {
+          const key = window.localStorage.key(i);
+          if (key !== null) {
+            out[key] = window.localStorage.getItem(key) ?? "";
+          }
+        }
+        return out;
+      });
+      this.savedSession = {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        cookies: cookies as any,
+        localStorage,
+      };
+      this.platform.logger.info(`♻️  Captured session: ${cookies.length} cookies, ${Object.keys(localStorage).length} localStorage entries`);
+    } catch (e: unknown) {
+      this.platform.logger.warn(`♻️  Failed to capture session: ${(e as Error)?.message ?? e}`);
+    }
+  }
+
+  /**
+   * Public entry point for external recovery triggers (e.g. debug endpoint).
+   */
+  async forceRecovery() {
+    await this.triggerRecovery();
+  }
+
+  /**
+   * Tear down the current page (and optionally the browser) and re-run init().
+   * Tries a page-only recovery first — keeping the browser alive preserves V8's
+   * compiled code cache for comps.js, making re-init dramatically faster. Only
+   * kills the whole browser if page-only recovery fails.
+   * Idempotent — concurrent callers see isRecovering=true and exit.
+   */
+  private async triggerRecovery() {
+    if (this.isRecovering) {
+      return;
+    }
+    this.isRecovering = true;
+    this.platform.logger.warn("🚑 Recovering from Puppeteer hang...");
+
+    // Stop the health check while we're recovering so it doesn't fire again mid-flight
+    if (this.healthCheckInterval) {
+      clearInterval(this.healthCheckInterval);
+      this.healthCheckInterval = undefined;
+    }
+
+    // Mark the platform as not ready so commands short-circuit until we're back
+    this.platform.markWebinterfaceNotReady();
+
+    // Phase 1: close the page only. If the browser is still responsive, we can reuse it.
+    if (this.page) {
+      const pageToClose = this.page;
+      this.page = undefined;
+      await Promise.race([
+        pageToClose.close().catch(() => { /* already dead */ }),
+        sleep(RECOVERY_CLOSE_TIMEOUT),
+      ]);
+    }
+
+    // Phase 2: probe whether the browser is still usable. If not, tear it down too.
+    const browserAlive = await this.isBrowserAlive();
+    if (!browserAlive && this.browser) {
+      this.platform.logger.warn("🚑 Browser itself is unresponsive — tearing down and relaunching");
+      const browserToClose = this.browser;
+      this.browser = undefined;
+      await Promise.race([
+        browserToClose.close().catch(() => { /* already dead */ }),
+        sleep(RECOVERY_CLOSE_TIMEOUT),
+      ]);
+      try {
+        browserToClose.process()?.kill("SIGKILL");
+      } catch {
+        // process may already be gone
+      }
+      await sleep(1000);
+    } else if (browserAlive) {
+      this.platform.logger.info("🚑 Browser still responsive — reusing it (V8 code cache intact)");
+    }
+
+    this.platform.logger.info("🚑 Re-initializing Loxone web interface after recovery...");
+    this.isRecovering = false; // init() needs this cleared so it can proceed
+    try {
+      await this.init();
+      this.platform.logger.info("✅ Recovery complete — Loxone web interface back online");
+    } catch (e: unknown) {
+      this.platform.logger.error(`❌ Recovery init failed: ${(e as Error)?.message ?? e}`);
+      // Leave isRecovering false so the next health check can retry
+    }
+  }
+
+  /**
+   * Quick liveness probe: create a throwaway page and close it within a deadline.
+   * If the browser's CDP connection is wedged, both will time out.
+   */
+  private async isBrowserAlive(): Promise<boolean> {
+    if (!this.browser) {
+      return false;
+    }
+    try {
+      const probe = await Promise.race([
+        this.browser.newPage(),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), RECOVERY_CLOSE_TIMEOUT)),
+      ]);
+      if (!probe) {
+        return false;
+      }
+      await Promise.race([
+        probe.close().catch(() => { /* ignore */ }),
+        sleep(RECOVERY_CLOSE_TIMEOUT),
+      ]);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Background watchdog. Pings the page every HEALTH_CHECK_INTERVAL ms via safeEvaluate
+   * with a trivial function. safeEvaluate itself handles the hang detection and recovery,
+   * so this method only needs to fire the probe.
+   */
+  startHealthCheck() {
+    if (this.healthCheckInterval) {
+      return;
+    }
+    this.healthCheckInterval = setInterval(async () => {
+      if (this.isRecovering || !this.page) {
+        return;
+      }
+      await this.safeEvaluate(() => 1);
+    }, HEALTH_CHECK_INTERVAL);
   }
 
   async refreshLogin() {
@@ -508,6 +779,10 @@ export class LoxoneWebinterface {
     }
     if (this.preventStandbyInterval) {
       clearInterval(this.preventStandbyInterval);
+    }
+    if (this.healthCheckInterval) {
+      clearInterval(this.healthCheckInterval);
+      this.healthCheckInterval = undefined;
     }
     if (this.page) {
       try {

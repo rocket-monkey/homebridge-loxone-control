@@ -426,6 +426,18 @@ export class LoxoneControlPlatform implements DynamicPlatformPlugin {
           return;
         }
 
+        case "/api/debug/recover": {
+          // Force a Puppeteer recovery cycle (tear down page, re-init). Useful for
+          // verifying the self-heal path end-to-end. Returns immediately — recovery
+          // runs in the background.
+          this.logger.info("🧪 Manual recovery triggered via /api/debug/recover");
+          this.loxoneWebinterface.forceRecovery().catch((e) => {
+            this.logger.error(`Error during forced recovery: ${e}`);
+          });
+          this.jsonResponse(response, { ok: true, action: "recover" });
+          return;
+        }
+
         case "/api/blinds/raw": {
           // Diagnostic probe: send a single raw command to the blind, optionally followed by a stop after N ms.
           // No state inference, no logic — just fires the command and returns. Use to discover what individual
@@ -687,6 +699,14 @@ export class LoxoneControlPlatform implements DynamicPlatformPlugin {
       return null;
     }
     return this.loxoneWebinterface.page;
+  }
+
+  getLoxoneWebinterfaceInstance() {
+    return this.loxoneWebinterfaceReady ? this.loxoneWebinterface : null;
+  }
+
+  markWebinterfaceNotReady() {
+    this.loxoneWebinterfaceReady = false;
   }
 
   async onReady() {
