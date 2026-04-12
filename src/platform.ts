@@ -426,6 +426,13 @@ export class LoxoneControlPlatform implements DynamicPlatformPlugin {
           return;
         }
 
+        case "/api/health": {
+          const health = await this.loxoneWebinterface.getHealthStatus();
+          const statusCode = health.status === "healthy" ? 200 : 503;
+          this.jsonResponse(response, health, statusCode);
+          return;
+        }
+
         case "/api/debug/recover": {
           // Force a Puppeteer recovery cycle (tear down page, re-init). Useful for
           // verifying the self-heal path end-to-end. Returns immediately — recovery

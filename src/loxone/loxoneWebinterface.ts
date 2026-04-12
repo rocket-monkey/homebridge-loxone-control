@@ -61,6 +61,7 @@ export class LoxoneWebinterface {
   private healthCheckInterval: ReturnType<typeof setInterval> | undefined;
   private isRecovering = false;
   private savedSession: SavedSession | null = null;
+  public recoveryCount = 0;
 
   constructor(public readonly platform: LoxoneControlPlatform) {
     this.platform.logger.debug("LoxoneWebinterface constructor");
@@ -605,6 +606,24 @@ export class LoxoneWebinterface {
   /**
    * Public entry point for external recovery triggers (e.g. debug endpoint).
    */
+  async getHealthStatus() {
+    const browserConnected = !!this.browser?.connected;
+    const pageReady = !!this.page;
+    let pageResponsive = false;
+    if (pageReady && !this.isRecovering) {
+      const probe = await this.safeEvaluate(() => true);
+      pageResponsive = probe === true;
+    }
+    return {
+      status: pageResponsive ? "healthy" : this.isRecovering ? "recovering" : "unhealthy",
+      browser: browserConnected ? "connected" : "disconnected",
+      page: pageReady ? (pageResponsive ? "responsive" : "unresponsive") : "none",
+      recovering: this.isRecovering,
+      recoveryCount: this.recoveryCount,
+      uptime: Math.round(process.uptime()),
+    };
+  }
+
   async forceRecovery() {
     await this.triggerRecovery();
   }
@@ -662,7 +681,8 @@ export class LoxoneWebinterface {
       this.platform.logger.info("🚑 Browser still responsive — reusing it (V8 code cache intact)");
     }
 
-    this.platform.logger.info("🚑 Re-initializing Loxone web interface after recovery...");
+    this.recoveryCount++;
+    this.platform.logger.info(`🚑 Re-initializing Loxone web interface after recovery (count: ${this.recoveryCount})...`);
     this.isRecovering = false; // init() needs this cleared so it can proceed
     try {
       await this.init();
