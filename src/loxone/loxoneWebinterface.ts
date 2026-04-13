@@ -204,9 +204,15 @@ export class LoxoneWebinterface {
       this.platform.logger.error(`🔍 Error stack: ${err.stack}`);
     });
 
-    // Listen to request failures
+    // Listen to request failures — filter out ERR_ABORTED which is the Loxone SPA
+    // cancelling its own in-flight polls (normal behavior, not a real failure).
+    // Remaining failures are logged at debug level since they rarely need action.
     this.page?.on("requestfailed", (request) => {
-      this.platform.logger.error(`🔍 Request failed: ${request.url()} - ${request.failure()?.errorText}`);
+      const errorText = request.failure()?.errorText ?? "";
+      if (errorText.includes("ERR_ABORTED")) {
+        return;
+      }
+      this.platform.logger.debug(`🔍 Request failed: ${request.url()} - ${errorText}`);
     });
 
     // Listen to all responses for debugging
