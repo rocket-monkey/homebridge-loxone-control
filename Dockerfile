@@ -1,48 +1,22 @@
 FROM homebridge/homebridge:latest
 
-# Install dependencies required for headless Chrome / Puppeteer
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates \
-    fonts-liberation \
-    libasound2t64 \
-    libatk-bridge2.0-0 \
-    libatk1.0-0 \
-    libcairo2 \
-    libcups2 \
-    libdbus-1-3 \
-    libdrm2 \
-    libexpat1 \
-    libfontconfig1 \
-    libgbm1 \
-    libglib2.0-0 \
-    libgtk-3-0 \
-    libnspr4 \
-    libnss3 \
-    libpango-1.0-0 \
-    libpangocairo-1.0-0 \
-    libx11-6 \
-    libx11-xcb1 \
-    libxcb1 \
-    libxcomposite1 \
-    libxcursor1 \
-    libxdamage1 \
-    libxext6 \
-    libxfixes3 \
-    libxi6 \
-    libxrandr2 \
-    libxrender1 \
-    libxss1 \
-    libxtst6 \
-    wget \
-    xdg-utils \
+ENV PUPPETEER_CACHE_DIR=/root/.cache/puppeteer
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Chrome shared-library dependencies.
+# Uses Swiss mirror — archive.ubuntu.com is unreliable from some hosts.
+RUN sed -i 's|http://archive.ubuntu.com/ubuntu/|http://ch.archive.ubuntu.com/ubuntu/|g' /etc/apt/sources.list.d/ubuntu.sources \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+       libnspr4 libnss3 libasound2t64 libgbm1 \
     && rm -rf /var/lib/apt/lists/*
 
-# Download Chrome for Puppeteer
-ENV PUPPETEER_CACHE_DIR=/root/.cache/puppeteer
-RUN npx -y puppeteer browsers install chrome
-
-# Append plugin install to the default startup script
-# This runs after Homebridge setup completes, so /var/lib/homebridge exists
-RUN printf '\n# Auto-install homebridge-loxone-control plugin\nif [ ! -d "/var/lib/homebridge/node_modules/homebridge-loxone-control" ]; then\n  echo "Installing homebridge-loxone-control plugin..."\n  cd /var/lib/homebridge && npm install --save homebridge-loxone-control@latest\nfi\n' >> /defaults/startup.sh
+# Pre-download Chrome for the pinned puppeteer 24.39.1.
+# The plugin is installed by homebridge's startup script at runtime (via
+# the /homebridge bind mount), but Chrome must be baked into the image
+# because /root/.cache/puppeteer is not persisted across recreates.
+RUN npm install -g puppeteer@24.39.1 \
+    && npx puppeteer browsers install chrome \
+    && npm uninstall -g puppeteer
 
 WORKDIR /homebridge
