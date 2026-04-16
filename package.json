@@ -52,7 +52,7 @@
   "dependencies": {
     "@homebridge/plugin-ui-utils": "2.0.1",
     "homebridge-lib": "^7.1.4",
-    "puppeteer": "^24.39.1",
+    "puppeteer": "24.39.1",
     "username": "7.0.0"
   }
 }
