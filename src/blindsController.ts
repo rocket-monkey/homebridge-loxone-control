@@ -291,8 +291,13 @@ export class BlindsController {
     const posState = platformAccessory.getPositionState();
     const posStateLabel = posState === this.platform.Characteristic.PositionState.STOPPED ? "stopped"
       : posState === this.platform.Characteristic.PositionState.DECREASING ? "decreasing" : "increasing";
+    const reportedTilt = platformAccessory.states.TiltPosition ?? "(none)";
+    const inferredTilt = isMovingDown ? "closed" : "open";
+    const lastText = platformAccessory.lastStateText || "(none)";
+    const pos = platformAccessory.states.Position;
     this.platform.logger.info(
-      `   🎯 "${name}" tilt adjustment: tilt=${tilt}, isMovingDown=${isMovingDown}, positionState=${posStateLabel}, target=${targetPosition}%`,
+      `   🎯 "${name}" tilt adjustment: target=${tilt}, inferred=${inferredTilt}, reported=${reportedTilt}, `
+      + `lastStateText="${lastText}", posState=${posStateLabel}, pos=${pos}%, targetPos=${targetPosition}%`,
     );
 
     // Stop the blind if it's still moving (it may still be in motion when position-watching triggers)
@@ -379,9 +384,15 @@ export class BlindsController {
 
   /**
    * Apply tilt pulses to transition between tilt states.
-   * Uses "up"/"down" toggle commands (not FullUp/FullDown which move to limits).
-   * For full transitions (closed↔open), chains two short pulses via "tilted" intermediate
-   * to avoid overshooting into position movement.
+   *
+   * Uses fixed-duration "up"/"down" toggle commands (not FullUp/FullDown which
+   * move to limits). Each 470ms pulse rotates slats ~45° on typical Loxone
+   * Jalousie hardware. For full transitions (closed↔open), chains two pulses
+   * via the "tilted" intermediate to avoid overshooting into position movement.
+   *
+   * Command direction (after parser fix where closed=vertical, open=horizontal):
+   *   "up"   rotates toward horizontal (open)
+   *   "down" rotates toward vertical (closed)
    */
   private applyTiltPulses = async (
     platformAccessory: PlatformWindowCoveringAccessory,
@@ -390,14 +401,12 @@ export class BlindsController {
   ) => {
     const { name } = platformAccessory.accessory.context.device;
 
-    // Single-step tilt transitions: [command, duration]
     const tiltSteps: Record<string, Record<string, [string, number]>> = {
       closed: { tilted: ["up", 470] },
       tilted: { closed: ["down", 470], open: ["up", 470] },
       open: { tilted: ["down", 470] },
     };
 
-    // Build the path: direct step if available, otherwise go via "tilted" intermediate
     const directStep = tiltSteps[fromTilt]?.[toTilt];
     const fromToTilted = tiltSteps[fromTilt]?.tilted;
     const tiltedToTarget = tiltSteps.tilted?.[toTilt];

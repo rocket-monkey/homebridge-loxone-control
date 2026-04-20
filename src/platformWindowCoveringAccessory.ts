@@ -41,7 +41,7 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
   private tiltTimer: ReturnType<typeof setTimeout> | null = null;
   private pendingTargetValue: number | null = null;
   public movementStartTime = 0; // Timestamp when movement command was dispatched
-  public tiltCooldownUntil = 0; // Ignore stateText tilt updates until this timestamp
+  public lastStateText = ""; // Most recent stateText seen from Loxone (diagnostic)
 
   constructor(
     public readonly platform: LoxoneControlPlatform,
@@ -346,8 +346,6 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
 
   applyTiltStateOptimistically(tilt: BlindsTilt) {
     this.states.TiltPosition = tilt;
-    // Ignore stateText tilt updates for 5s — Loxone may report stale tilt after pulse
-    this.tiltCooldownUntil = Date.now() + 5000;
     const tiltAngle = this.tiltPositionToAngle(tilt);
     this.service?.updateCharacteristic(
       this.platform.Characteristic.CurrentHorizontalTiltAngle,
@@ -587,8 +585,11 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
       ? "down"
       : null;
 
-    // Parse tilt from stateText when available, otherwise preserve current
-    if (stateText && Date.now() >= this.tiltCooldownUntil) {
+    if (stateText) {
+      this.lastStateText = stateText;
+    }
+
+    if (stateText) {
       newStates.TiltPosition = getTiltPositionFromStateText(
         stateText,
         (msg) => this.platform.logger.info(msg),
