@@ -217,6 +217,18 @@ export class LoxoneControlPlatform implements DynamicPlatformPlugin {
       return;
     }
 
+    // Idempotent. onReady() is fired both on initial login AND on every
+    // successful recovery re-login (loxoneWebinterface.triggerRecovery →
+    // init → login success → platform.onReady). Re-binding port 18081 on
+    // the second call throws EADDRINUSE, which crashes the child bridge
+    // and forces Homebridge to respawn the whole process. The HTTP health
+    // server is deliberately independent of Puppeteer's session lifecycle
+    // (it reports status including "recovering"), so if it's already
+    // bound we keep it — no-op and return.
+    if (this.requestServer?.listening) {
+      return;
+    }
+
     try {
       this.requestServer = http.createServer((req, res) => {
         // Set CORS headers
