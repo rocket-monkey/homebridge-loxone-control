@@ -29,6 +29,34 @@ import { Logger } from "./logger.js";
 import { parseIdentifier } from "./loxone/utils/parseIdentifier.js";
 
 /**
+ * Resolve a Loxone named state to its current value, using the once-snapshot
+ * state-name → UUID map (`controlStateMaps[uuidAction][stateName]` = UUID),
+ * combined with the per-update UUID → value map (`stateContainer.newVals` or
+ * `stateContainer.states`, both UUID-keyed in the wire format we receive).
+ * This is the canonical lookup Loxone's own web app uses and is stable
+ * across firmware versions — no text matching, no per-control special cases.
+ */
+function resolveStateValue(
+  stateContainer: any,
+  stateName: string,
+  controlStateMaps: { [uuidAction: string]: { [n: string]: string } },
+): unknown {
+  const uuidAction = stateContainer?.control?.uuidAction;
+  if (!uuidAction) {
+    return undefined;
+  }
+  const stateUuid = controlStateMaps[uuidAction]?.[stateName];
+  if (!stateUuid) {
+    return undefined;
+  }
+  const valuesMap = stateContainer.newVals || stateContainer.states;
+  if (!valuesMap) {
+    return undefined;
+  }
+  return valuesMap[stateUuid];
+}
+
+/**
  * HomebridgePlatform
  * This class is the main constructor for your plugin, this is where you should
  * parse the user config and discover/register accessories with Homebridge.
@@ -340,6 +368,9 @@ export class LoxoneControlPlatform implements DynamicPlatformPlugin {
             extra.desiredTilt = instance.desiredTilt;
             extra.autoSunPosition = instance.autoSunPosition;
           }
+          if (instance instanceof PlatformCentralBlindsAccessory) {
+            extra.autoActive = instance.getAutoActive();
+          }
           this.jsonResponse(response, { name, type, identifier: instance.identifier, states: instance.states, ...extra });
           return;
         }
@@ -435,6 +466,30 @@ export class LoxoneControlPlatform implements DynamicPlatformPlugin {
           } else {
             this.jsonResponse(response, { error: "Invalid button (tilted, opened, shade)" }, 400);
           }
+          return;
+        }
+
+        case "/api/debug/state": {
+          const inst = params.name ? this.findInstanceByName(params.name) : null;
+          if (!inst) {
+            this.jsonResponse(response, { error: "Accessory not found", name: params.name }, 404);
+            return;
+          }
+          const { type, actionUuid } = parseIdentifier(inst.identifier);
+          const matchedKeys = Object.keys(this.allStates).filter((k) => {
+            const p = parseIdentifier(k);
+            return p.actionUuid === actionUuid && p.type === type;
+          });
+          const stateNameMap = this.loxoneWebinterface.controlStateMaps[actionUuid] || null;
+          this.jsonResponse(response, {
+            name: inst.accessory.context.device.name,
+            identifier: inst.identifier,
+            instanceStates: inst.states,
+            allStatesKeys: matchedKeys,
+            allStatesData: matchedKeys.map((k) => ({ key: k, value: this.allStates[k] })),
+            stateNameMap,
+            totalControlStateMaps: Object.keys(this.loxoneWebinterface.controlStateMaps).length,
+          });
           return;
         }
 
@@ -758,6 +813,28 @@ export class LoxoneControlPlatform implements DynamicPlatformPlugin {
       } else {
         this.logger.error(`No initial state found for ${instance.identifier}`);
       }
+
+      // After the state-name maps are populated, resolve autoActive from
+      // the cached newVals for each cover. Covers the case where the
+      // initial per-cover state broadcast arrived before the webinterface
+      // was marked ready (and the dispatch's resolveStateValue lookup
+      // returned undefined because controlStateMaps was still empty).
+      if (instance instanceof PlatformWindowCoveringAccessory) {
+        const { type, actionUuid } = parseIdentifier(instance.identifier);
+        const stateUuid = this.loxoneWebinterface.controlStateMaps[actionUuid]?.autoActive;
+        if (stateUuid) {
+          for (const k in this.allStates) {
+            const p = parseIdentifier(k);
+            if (p.type === type && p.actionUuid === actionUuid) {
+              const v = (this.allStates[k] as any)?.[stateUuid];
+              if (v !== undefined && v !== null) {
+                instance.applyAutoActiveFromCentral(Boolean(v));
+              }
+              break;
+            }
+          }
+        }
+      }
     });
   }
 
@@ -803,6 +880,8 @@ export class LoxoneControlPlatform implements DynamicPlatformPlugin {
     const newState = stateContainer.newVals || stateContainer.states;
     this.allStates[identifier] = newState;
     if (!this.loxoneWebinterfaceReady) {
+      // controlStateMaps isn't populated yet — onReady will replay from
+      // allStates once the snapshot is built.
       return;
     }
 
@@ -826,6 +905,20 @@ export class LoxoneControlPlatform implements DynamicPlatformPlugin {
     
     if (existingInstance && !!newState) {
       existingInstance.setState(newState, stateContainer.stateText);
+
+      // Per-cover Auto Sun state extraction — canonical path.
+      // Loxone's per-control state map (stateContainer.control.states) holds
+      // a name→UUID map. The actual values arrive in stateContainer.newVals
+      // keyed by UUID. So `newVals[control.states.autoActive]` is the live
+      // boolean. This works for Jalousie AND Markise (awning) controls
+      // alike, regardless of whether the cover is aggregated in a
+      // CentralJalousie. No text matching, no version-fragile heuristics.
+      if (existingInstance instanceof PlatformWindowCoveringAccessory) {
+        const aa = resolveStateValue(stateContainer, "autoActive", this.loxoneWebinterface.controlStateMaps);
+        if (aa !== undefined && aa !== null) {
+          existingInstance.applyAutoActiveFromCentral(Boolean(aa));
+        }
+      }
       return;
     }
     if (identifier.includes("Beschattung")) {

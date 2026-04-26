@@ -705,54 +705,35 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
       this.onPositionUpdate(newStates.Position ?? 0, isStopped);
     }
 
-    // Update Auto Sun Position state based on automation text messages
-    this.updateAutoSunState(givenValues);
+    // The central-array fan-out path may dispatch a per-cover entry that
+    // has autoActive on it directly (val.autoActive). Honor that as a
+    // secondary path; the primary canonical resolution lives in
+    // platform.onStatusUpdate (newVals[control.states.autoActive]).
+    if (newValue && typeof newValue === "object" && typeof newValue.autoActive === "boolean") {
+      this.applyAutoActiveFromCentral(newValue.autoActive);
+    }
   };
 
-  private updateAutoSunState(givenValues: States) {
-    const checkAutomationState = (stateObj: Record<string, unknown>): { hasAutomationText: boolean; isActive: boolean } => {
-      for (const value of Object.values(stateObj)) {
-        if (typeof value === "object" && value !== null && "text" in value) {
-          const text = (value as { text: string }).text;
-          if (text && text.includes("Automatik Beschattung")) {
-            const isActive = text.includes("aktiv") && !text.includes("deaktiviert") && !text.includes("inaktiv");
-            this.platform.logger.debug(
-              `☀️ ${this.accessory.context.device.name}: Automation text: "${text}", interpreted as: ${isActive ? "ACTIVE" : "INACTIVE"}`,
-            );
-            return { hasAutomationText: true, isActive };
-          }
-        }
-      }
-      return { hasAutomationText: false, isActive: false };
-    };
-
+  // Auto Sun Position is part of the central CentralJalousie state — each
+  // per-blind entry in that array carries an `autoActive` boolean. The central
+  // accessory dispatches it here so each blind's switch reflects Loxone's
+  // ground truth. Per-blind status messages (movement/position) don't carry
+  // autoActive on their own.
+  applyAutoActiveFromCentral(autoActive: boolean) {
     const timeSinceLastCommand = Date.now() - this.lastAutoSunCommand;
     if (this.lastAutoSunCommand > 0 && timeSinceLastCommand < AUTO_SUN_COOLDOWN) {
-      this.platform.logger.debug(
-        `☀️ ${this.accessory.context.device.name}: Ignoring automation state update for ${AUTO_SUN_COOLDOWN - timeSinceLastCommand}ms after user command`,
-      );
       return;
     }
-
-    const stateToCheck = Array.isArray(givenValues) ? givenValues[0] : givenValues;
-    if (!stateToCheck || typeof stateToCheck !== "object") {
+    if (this.autoSunPosition === autoActive) {
       return;
     }
-
-    const automationResult = checkAutomationState(stateToCheck);
-    if (automationResult.hasAutomationText && this.autoSunPosition !== automationResult.isActive) {
-      this.autoSunPosition = automationResult.isActive;
-      this.autoSunSwitchService?.updateCharacteristic(
-        this.platform.Characteristic.On,
-        this.autoSunPosition,
-      );
-      this.platform.logger.info(
-        `☀️ ${this.accessory.context.device.name}: Auto Sun Position updated to ${this.autoSunPosition ? "ON" : "OFF"}`,
-      );
-    } else if (!automationResult.hasAutomationText) {
-      this.platform.logger.debug(
-        `☀️ ${this.accessory.context.device.name}: No automation text found, preserving current state: ${this.autoSunPosition ? "ON" : "OFF"}`,
-      );
-    }
+    this.autoSunPosition = autoActive;
+    this.autoSunSwitchService?.updateCharacteristic(
+      this.platform.Characteristic.On,
+      this.autoSunPosition,
+    );
+    this.platform.logger.info(
+      `☀️ ${this.accessory.context.device.name}: Auto Sun Position → ${autoActive ? "ON" : "OFF"} (from central state)`,
+    );
   }
 }

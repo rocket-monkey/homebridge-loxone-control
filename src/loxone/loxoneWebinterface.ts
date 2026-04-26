@@ -55,6 +55,11 @@ export class LoxoneWebinterface {
   private browser: Browser | undefined;
   public page: Page | undefined;
   public collectedComponents: LoxoneComponent[] = [];
+  // uuidAction → state-name → UUID. Read once from window.collection after
+  // login. The `control.states` map isn't carried in the per-update dispatch
+  // (Puppeteer serialization strips it), so this snapshot is the canonical
+  // way to know which UUID in newVals corresponds to e.g. "autoActive".
+  public controlStateMaps: { [uuidAction: string]: { [stateName: string]: string } } = {};
 
   private interval: ReturnType<typeof setInterval> | undefined;
   private preventStandbyInterval: ReturnType<typeof setInterval> | undefined;
@@ -484,6 +489,43 @@ export class LoxoneWebinterface {
           c.type
         }:${c.uuidAction}`,
       })) as LoxoneComponent[];
+
+      // Snapshot each control's state-name → UUID map directly off the live
+      // controls in the page. Each entry in window.collection IS the control
+      // (per the comps.js patch), and `control.states` is the Loxone-native
+      // name map (string UUID, array of UUIDs, or object of UUIDs). We
+      // flatten it so platform.ts can resolve any named state from newVals.
+      try {
+        this.controlStateMaps = await this.page!.evaluate(() => {
+          const collection = (window as unknown as { collection: any[] }).collection || [];
+          const out: Record<string, Record<string, string>> = {};
+          for (const ctrl of collection) {
+            if (!ctrl) continue;
+            // Collection entries are CommandSrc objects with a `.control`
+            // referencing the actual Control. The Loxone-native state-name
+            // → UUID map lives on `.control.states`.
+            const uuidAction = ctrl.uuidAction || ctrl.control?.uuidAction;
+            const stateMap = ctrl.control?.states || ctrl.states;
+            if (!uuidAction || !stateMap) continue;
+            const flat: Record<string, string> = {};
+            for (const name of Object.keys(stateMap)) {
+              const v = stateMap[name];
+              if (typeof v === "string") {
+                flat[name] = v;
+              } else if (Array.isArray(v)) {
+                if (typeof v[0] === "string") flat[name] = v[0];
+              } else if (v && typeof v === "object") {
+                const first = Object.values(v).find((x: unknown) => typeof x === "string");
+                if (typeof first === "string") flat[name] = first;
+              }
+            }
+            out[uuidAction] = flat;
+          }
+          return out;
+        });
+      } catch (e) {
+        this.platform.logger.error(`Failed to capture control state maps: ${e}`);
+      }
       this.platform.logger.info(
         "🔌 All collected components: ",
         this.collectedComponents.map((c) => c.identifier),
