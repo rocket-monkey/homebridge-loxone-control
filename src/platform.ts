@@ -500,6 +500,25 @@ export class LoxoneControlPlatform implements DynamicPlatformPlugin {
           return;
         }
 
+        case "/api/debug/sendcmd": {
+          // Send a raw command to ANY accessory's identifier (not just blinds).
+          // Used to test whether the underlying Loxone control accepts a given
+          // command word — independent of HomeKit / characteristic plumbing.
+          const inst = params.name ? this.findInstanceByName(params.name) : null;
+          if (!inst) {
+            this.jsonResponse(response, { error: "Accessory not found", name: params.name }, 404);
+            return;
+          }
+          if (!params.command) {
+            this.jsonResponse(response, { error: "Missing command param" }, 400);
+            return;
+          }
+          this.logger.error(`🧪 /api/debug/sendcmd: ${inst.identifier} <- "${params.command}"`);
+          await sendCommandSafe(this, inst.identifier, [params.command]);
+          this.jsonResponse(response, { ok: true, identifier: inst.identifier, command: params.command });
+          return;
+        }
+
         case "/api/debug/recover": {
           // Force a Puppeteer recovery cycle (tear down page, re-init). Useful for
           // verifying the self-heal path end-to-end. Returns immediately — recovery

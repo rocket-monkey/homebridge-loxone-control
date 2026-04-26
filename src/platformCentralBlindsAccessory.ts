@@ -101,42 +101,50 @@ export class PlatformCentralBlindsAccessory extends AccessoryBase {
   private async setAutoOn(value: CharacteristicValue) {
     const desired = value as boolean;
     const { name } = this.accessory.context.device;
-    this.platform.logger.info(
+
+    // Short-circuit when state already matches. HomeKit scenes/automations
+    // routinely include redundant On/Off characteristics (e.g. an "All Blinds
+    // Up" scene that also flips Auto off "for safety"); without this guard
+    // we'd fire commands every time a sibling switch is pressed.
+    if (this.autoActive === desired) {
+      return;
+    }
+
+    this.platform.logger.error(
       `☀️ ${name}: All Blinds Auto ${desired ? "ON" : "OFF"} ` +
       `(scope: ${this.memberControlUUIDs.size} blind(s); awnings excluded)`,
     );
 
     this.autoActive = desired;
 
-    // Send to the central Loxone control. Loxone propagates internally to all
-    // member covers — but only those it actually aggregates (awnings are not
-    // part of CentralJalousie and stay independent, per Loxone's design).
-    const centralCmd = desired ? "auto" : "stop";
+    // CRITICAL: do NOT send "stop" or any movement command to the central
+    // CentralJalousie when toggling Auto OFF. "stop" halts any in-progress
+    // movement — so if the user pressed All Blinds Up at the same time
+    // (common scene pattern), the FullUp gets cancelled within a few ms.
+    // Auto on/off is per-blind state, so fan out to members only.
     const memberCmd = desired ? "auto" : "NoAuto";
-    await sendCommandSafe(this.platform, this.identifier, [centralCmd]);
 
-    // Optimistic snappiness: also push the command (and the optimistic switch
-    // state) directly to each member cover, bypassing the wait for Loxone's
-    // re-broadcast. Scoped by memberControlUUIDs so awnings are skipped.
-    if (this.memberControlUUIDs.size > 0) {
-      this.platform.resetAllBlindAutoCooldowns();
-      const targets = this.platform.instances.filter(
-        (inst): inst is PlatformWindowCoveringAccessory =>
-          inst instanceof PlatformWindowCoveringAccessory &&
-          [...this.memberControlUUIDs].some((u) => inst.identifier.includes(u)),
-      );
-      for (const t of targets) {
-        t.autoSunPosition = desired;
-        t.autoSunSwitchService?.updateCharacteristic(
-          this.platform.Characteristic.On,
-          desired,
-        );
-        t.lastAutoSunCommand = Date.now();
-      }
-      await Promise.all(
-        targets.map((t) => sendCommandSafe(this.platform, t.identifier, [memberCmd])),
-      );
+    if (this.memberControlUUIDs.size === 0) {
+      return;
     }
+
+    this.platform.resetAllBlindAutoCooldowns();
+    const targets = this.platform.instances.filter(
+      (inst): inst is PlatformWindowCoveringAccessory =>
+        inst instanceof PlatformWindowCoveringAccessory &&
+        [...this.memberControlUUIDs].some((u) => inst.identifier.includes(u)),
+    );
+    for (const t of targets) {
+      t.autoSunPosition = desired;
+      t.autoSunSwitchService?.updateCharacteristic(
+        this.platform.Characteristic.On,
+        desired,
+      );
+      t.lastAutoSunCommand = Date.now();
+    }
+    await Promise.all(
+      targets.map((t) => sendCommandSafe(this.platform, t.identifier, [memberCmd])),
+    );
   }
 
   getAutoActive(): boolean {
