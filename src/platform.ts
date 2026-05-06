@@ -858,6 +858,9 @@ export class LoxoneControlPlatform implements DynamicPlatformPlugin {
   }
 
   onStatusUpdateBefore(newValue: any) {
+    // Heartbeat for the WS-data-freshness arm of the watchdog (see
+    // LoxoneWebinterface.startHealthCheck). Cheap — just a Date.now write.
+    this.loxoneWebinterface.bumpStatusHeartbeat();
     const thirdKey = Object.keys(newValue).pop();
     const lastPart = splitTail(thirdKey, "-");
     const existingControls = this.loxoneWebinterface.collectedComponents.filter(
@@ -891,6 +894,9 @@ export class LoxoneControlPlatform implements DynamicPlatformPlugin {
   }
 
   onStatusUpdate(stateContainer: any) {
+    // Heartbeat for the WS-data-freshness arm of the watchdog (see
+    // LoxoneWebinterface.startHealthCheck).
+    this.loxoneWebinterface.bumpStatusHeartbeat();
     const { searchDescription, type, uuidAction } = stateContainer.control;
     const identifier = `${
       searchDescription || "unknown • unknown"

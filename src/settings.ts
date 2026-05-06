@@ -39,6 +39,13 @@ export const EVALUATE_TIMEOUT = 5000;
 export const HEALTH_CHECK_INTERVAL = 30000;
 // Max time to wait for a graceful page/browser close during recovery before force-killing.
 export const RECOVERY_CLOSE_TIMEOUT = 3000;
+// If no Loxone status push lands within this window, the WS data path is dead
+// even if the page itself is responsive. The trivial `() => 1` health probe
+// can't tell — Chrome's JS context is still alive, but the patched comps.js
+// stopped delivering events. Triggers a full recovery the same way an
+// evaluate-hang does. 2026-05-06: previously zero coverage here, observed
+// 5h37m of complete log silence after the WS data path quietly died.
+export const STATUS_STALE_THRESHOLD = 600000; // 10 minutes
 
 export const STANDBY_PREVENT_INTERVAL = 30000;
 export const AUTO_SUN_COOLDOWN = 1000;

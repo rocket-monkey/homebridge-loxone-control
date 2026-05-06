@@ -21,6 +21,7 @@ import {
   HEALTH_CHECK_INTERVAL,
   RECOVERY_CLOSE_TIMEOUT,
   SESSION_RESTORE_PROBE_TIMEOUT,
+  STATUS_STALE_THRESHOLD,
 } from "../settings.js";
 
 // In-memory snapshot of a successful Loxone session. Used to skip the full
@@ -67,6 +68,11 @@ export class LoxoneWebinterface {
   private isRecovering = false;
   private savedSession: SavedSession | null = null;
   public recoveryCount = 0;
+  // Wall-clock of the most recent Loxone status push delivered through the
+  // patched comps.js (onStatusUpdate / onStatusUpdateBefore). The page can
+  // be JS-responsive while the WS data path silently dies — `() => 1` would
+  // still return 1. Tracking actual data flow is the only reliable signal.
+  private lastStatusPushAt = 0;
 
   constructor(public readonly platform: LoxoneControlPlatform) {
     this.platform.logger.debug("LoxoneWebinterface constructor");
@@ -768,19 +774,44 @@ export class LoxoneWebinterface {
   }
 
   /**
-   * Background watchdog. Pings the page every HEALTH_CHECK_INTERVAL ms via safeEvaluate
-   * with a trivial function. safeEvaluate itself handles the hang detection and recovery,
-   * so this method only needs to fire the probe.
+   * Called from platform.onStatusUpdate / onStatusUpdateBefore on every Loxone
+   * status push. The watchdog uses this timestamp to detect a silently dead
+   * WS data path (page JS still answers but no events flow through).
+   */
+  bumpStatusHeartbeat() {
+    this.lastStatusPushAt = Date.now();
+  }
+
+  /**
+   * Background watchdog. Two checks per tick:
+   *   1. JS-responsiveness — `safeEvaluate(() => 1)` exercises Chrome's CDP path;
+   *      a hang there triggers recovery via safeEvaluate's own catch.
+   *   2. WS-data freshness — if no Loxone status push has landed within
+   *      STATUS_STALE_THRESHOLD ms, the WS path is dead even if Chrome is
+   *      responsive. The trivial probe in (1) cannot detect this. Trigger
+   *      the same recovery path explicitly.
    */
   startHealthCheck() {
     if (this.healthCheckInterval) {
       return;
     }
+    // Reset on (re)init — give the threshold window a fresh start so we
+    // don't immediately re-trigger after a successful recovery before the
+    // first push lands.
+    this.lastStatusPushAt = Date.now();
     this.healthCheckInterval = setInterval(async () => {
       if (this.isRecovering || !this.page) {
         return;
       }
       await this.safeEvaluate(() => 1);
+      const stale = Date.now() - this.lastStatusPushAt;
+      if (stale > STATUS_STALE_THRESHOLD) {
+        this.platform.logger.error(
+          `🚨 No Loxone status push for ${Math.round(stale / 1000)}s ` +
+          `(threshold ${STATUS_STALE_THRESHOLD / 1000}s) — WS data path is dead, triggering recovery`,
+        );
+        this.triggerRecovery().catch(() => { /* already logged */ });
+      }
     }, HEALTH_CHECK_INTERVAL);
   }
 
