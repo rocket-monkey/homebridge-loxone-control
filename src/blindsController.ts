@@ -300,29 +300,26 @@ export class BlindsController {
       + `lastStateText="${lastText}", posState=${posStateLabel}, pos=${pos}%, targetPos=${targetPosition}%`,
     );
 
-    // Stop the blind if it's still moving (it may still be in motion when position-watching triggers)
-    const isStopped = posState === this.platform.Characteristic.PositionState.STOPPED;
-    if (!isStopped) {
-      this.platform.logger.info(
-        `   ⏹️ "${name}" still moving, sending stop command`,
-      );
-      await this.sendMoveJalousieCommand(platformAccessory, false);
+    // Always send a defensive stop and wait for the motor to actually halt.
+    // Loxone reports posState=stopped as soon as it issues the internal stop, but
+    // the motor can still be decelerating for ~1s afterward — a tilt pulse sent
+    // during that window lands on a moving motor and is silently ignored,
+    // leaving the slats at the wrong angle (see open→tilted scene regression).
+    await this.sendMoveJalousieCommand(platformAccessory, false);
 
-      // Wait for Loxone to confirm the blind has actually stopped
-      const stoppedState = this.platform.Characteristic.PositionState.STOPPED;
-      for (let i = 0; i < 20; i++) {
-        await sleep(BLINDS_STOP_SETTLE_DELAY);
-        if (platformAccessory.getPositionState() === stoppedState) {
-          break;
-        }
-        if (i === 19) {
-          this.platform.logger.warn(`   ⚠️ "${name}" did not report stopped after ${20 * BLINDS_STOP_SETTLE_DELAY}ms, proceeding anyway`);
-        }
+    const stoppedState = this.platform.Characteristic.PositionState.STOPPED;
+    for (let i = 0; i < 20; i++) {
+      await sleep(BLINDS_STOP_SETTLE_DELAY);
+      if (platformAccessory.getPositionState() === stoppedState) {
+        break;
       }
-
-      // Extra settle: let the physical slats fully stabilize after stopping
-      await sleep(BLINDS_FINAL_POSITION_SETTLE * 2);
+      if (i === 19) {
+        this.platform.logger.warn(`   ⚠️ "${name}" did not report stopped after ${20 * BLINDS_STOP_SETTLE_DELAY}ms, proceeding anyway`);
+      }
     }
+
+    // Extra settle: let the physical slats/motor fully stabilize before pulsing.
+    await sleep(BLINDS_FINAL_POSITION_SETTLE * 2);
 
     if (blindsType === "awning") {
       return;
