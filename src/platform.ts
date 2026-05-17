@@ -111,6 +111,23 @@ export class LoxoneControlPlatform implements DynamicPlatformPlugin {
       this.logger.debug("Executed didFinishLaunching callback");
       // run the method to discover / register your devices as accessories
       this.discoverDevices();
+
+      // Drift detector: every 60s, scan all WindowCovering instances and warn
+      // if the plugin's internal Position differs from the most recent Loxone
+      // stateText by more than 5%. Diagnostic — does not mutate state. Used to
+      // hunt the bug where the plugin's view of CurrentPosition gets stale
+      // and HomeKit shows an accessory at the wrong position.
+      setInterval(() => {
+        for (const inst of this.instances) {
+          if (inst instanceof PlatformWindowCoveringAccessory) {
+            try {
+              inst.checkPositionDrift();
+            } catch (e) {
+              this.logger.debug(`drift-check error for ${inst.identifier}: ${e}`);
+            }
+          }
+        }
+      }, 60_000);
     });
 
     this.loxoneWebinterface = new LoxoneWebinterface(this);

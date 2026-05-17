@@ -456,6 +456,49 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
     this.lastAutoSunCommand = 0;
   }
 
+  // --- Drift detector (diagnostic) ---
+  //
+  // Parse a position percentage from the most recent stateText Loxone sent.
+  // Returns 0..100 when confident, or null when stateText doesn't carry a
+  // position. Covers the two Loxone phrasings observed in the wild:
+  //   "Blinds are N% closed, slats are vertical." (jalousie)
+  //   "The awning is N% extended."                (awning / Markise)
+  //   "The awning is fully retracted."            → 0
+  //   "The awning is fully extended."             → 100
+  //   "Blinds are open."                          → 0
+  //   "Blinds are closed."                        → 100
+  positionFromLastStateText(): number | null {
+    const t = this.lastStateText;
+    if (!t) return null;
+    const pct = t.match(/(\d+)\s*%/);
+    if (pct) return parseInt(pct[1], 10);
+    if (/fully retracted|are open\b/i.test(t)) return 0;
+    if (/fully extended|are closed\b/i.test(t)) return 100;
+    return null;
+  }
+
+  // Compare the plugin's internal state.Position to what Loxone last told us
+  // via stateText. They should match within tolerance during steady-state. A
+  // sustained mismatch means the plugin's view of CurrentPosition (and thus
+  // what it reports to HomeKit) is stale — which is the bug we're hunting.
+  // Skip while a move is in flight (positions naturally diverge mid-move).
+  checkPositionDrift(toleranceP: number = 5) {
+    if (this.onPositionUpdate) return; // movement in flight
+    if (this.movementStartTime > 0 && Date.now() - this.movementStartTime < 30000) return;
+    const fromText = this.positionFromLastStateText();
+    if (fromText === null) return;
+    const internal = this.states?.Position ?? 0;
+    const diff = Math.abs(fromText - internal);
+    if (diff < toleranceP) return;
+    const { name } = this.accessory.context.device;
+    this.platform.logger.warn(
+      `🚨 DRIFT "${name}": internal Position=${internal}% but stateText says ${fromText}% ` +
+      `(lastStateText="${this.lastStateText}", targetPosition=${this.states?.TargetPosition}, ` +
+      `posState=${this.states?.PositionState}, autoSun=${this.autoSunPosition}, ` +
+      `targetTimer=${this.targetPositionTimer !== null}, lastAutoSunCmd=${this.lastAutoSunCommand})`,
+    );
+  }
+
   // --- Position getters ---
 
   getPosition() {
