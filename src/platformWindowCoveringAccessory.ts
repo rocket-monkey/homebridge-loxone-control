@@ -469,11 +469,19 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
   //   "Blinds are closed."                        → 100
   positionFromLastStateText(): number | null {
     const t = this.lastStateText;
-    if (!t) return null;
+    if (!t) {
+return null;
+}
     const pct = t.match(/(\d+)\s*%/);
-    if (pct) return parseInt(pct[1], 10);
-    if (/fully retracted|are open\b/i.test(t)) return 0;
-    if (/fully extended|are closed\b/i.test(t)) return 100;
+    if (pct) {
+return parseInt(pct[1], 10);
+}
+    if (/fully retracted|are open\b/i.test(t)) {
+return 0;
+}
+    if (/fully extended|are closed\b/i.test(t)) {
+return 100;
+}
     return null;
   }
 
@@ -483,13 +491,21 @@ export class PlatformWindowCoveringAccessory extends AccessoryBase {
   // what it reports to HomeKit) is stale — which is the bug we're hunting.
   // Skip while a move is in flight (positions naturally diverge mid-move).
   checkPositionDrift(toleranceP: number = 5) {
-    if (this.onPositionUpdate) return; // movement in flight
-    if (this.movementStartTime > 0 && Date.now() - this.movementStartTime < 30000) return;
+    if (this.onPositionUpdate) {
+return;
+} // movement in flight
+    if (this.movementStartTime > 0 && Date.now() - this.movementStartTime < 30000) {
+return;
+}
     const fromText = this.positionFromLastStateText();
-    if (fromText === null) return;
+    if (fromText === null) {
+return;
+}
     const internal = this.states?.Position ?? 0;
     const diff = Math.abs(fromText - internal);
-    if (diff < toleranceP) return;
+    if (diff < toleranceP) {
+return;
+}
     const { name } = this.accessory.context.device;
     this.platform.logger.warn(
       `🚨 DRIFT "${name}": internal Position=${internal}% but stateText says ${fromText}% ` +
