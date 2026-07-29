@@ -9,7 +9,7 @@
   "homepage": "https://github.com/rocket-monkey/homebridge-loxone-control#readme",
   "repository": {
     "type": "git",
-    "url": "https://github.com/rocket-monkey/homebridge-loxone-control.git"
+    "url": "git+https://github.com/rocket-monkey/homebridge-loxone-control.git"
   },
   "bugs": {
     "url": "https://github.com/rocket-monkey/homebridge-loxone-control/issues"
