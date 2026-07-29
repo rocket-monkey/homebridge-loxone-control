@@ -315,6 +315,18 @@ export class LoxoneWebinterface {
             resolve(__dirname, "scripts/comps.js-v16.0.0.js"),
             "utf-8",
           );
+        } else if (request.url().includes("comps.js?v=17.1")) {
+          // v17 rewrote newStatesReceived (dedup via _shallowEqual, Promise
+          // instead of Q) — the patch is PORTED, not copied: the after-callback
+          // now sits inside the dedup branch, so it only fires on real state
+          // changes; the before-callback still receives the RAW arg because
+          // v17's own merge (`{...o}`) would flatten CentralJalousie's Array
+          // broadcast into an index-keyed object.
+          version = "17.1.4";
+          patched = await readFile(
+            resolve(__dirname, "scripts/comps.js-v17.1.4.js"),
+            "utf-8",
+          );
         } else {
           this.platform.logger.error(`❌ Unsupported Loxone version in URL: ${request.url()}`);
           // Let the original request continue
