@@ -58,5 +58,10 @@ export const sendCommandSafe = async (
   const jsError = await sendCommand(platform, ...args);
   if (jsError) {
     platform.logger.error(`Error in sendCommand: ${jsError}`);
+    return;
   }
+  // The command reached the page. Loxone must now echo a status push; if it
+  // doesn't, the data path is dead and we recover immediately instead of
+  // waiting for the slower silence/socket watchdogs to notice.
+  platform.getLoxoneWebinterfaceInstance()?.expectStatusAfterCommand();
 };

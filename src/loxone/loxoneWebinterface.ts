@@ -22,6 +22,8 @@ import {
   RECOVERY_CLOSE_TIMEOUT,
   SESSION_RESTORE_PROBE_TIMEOUT,
   STATUS_STALE_THRESHOLD,
+  COMMAND_ECHO_TIMEOUT,
+  WS_RECONNECT_GRACE,
 } from "../settings.js";
 
 // In-memory snapshot of a successful Loxone session. Used to skip the full
@@ -72,6 +74,10 @@ export class LoxoneWebinterface {
   // be JS-responsive while the WS data path silently dies — `() => 1` would
   // still return 1. Tracking actual data flow is the only reliable signal.
   private lastStatusPushAt = 0;
+  // Armed when the last WebSocket closes, cancelled if one reconnects.
+  private wsRecoveryTimer: ReturnType<typeof setTimeout> | undefined;
+  // Armed when a command goes out, cancelled by the status push it must produce.
+  private commandEchoTimer: ReturnType<typeof setTimeout> | undefined;
 
   constructor(public readonly platform: LoxoneControlPlatform) {
     this.platform.logger.debug("LoxoneWebinterface constructor");
@@ -177,6 +183,8 @@ export class LoxoneWebinterface {
     if (DEBUG_MODE) {
       this.platform.logger.info("✅ New page created");
     }
+
+    await this.watchWebSocket();
 
     // mobile viewport for easy navigation
     if (DEBUG_MODE) {
@@ -727,6 +735,17 @@ export class LoxoneWebinterface {
     this.isRecovering = true;
     this.platform.logger.warn("🚑 Recovering from Puppeteer hang...");
 
+    // Closing the page below fires webSocketClosed; without this the old page's
+    // watcher would arm a timer and schedule a second, redundant recovery.
+    if (this.wsRecoveryTimer) {
+      clearTimeout(this.wsRecoveryTimer);
+      this.wsRecoveryTimer = undefined;
+    }
+    if (this.commandEchoTimer) {
+      clearTimeout(this.commandEchoTimer);
+      this.commandEchoTimer = undefined;
+    }
+
     // Stop the health check while we're recovering so it doesn't fire again mid-flight
     if (this.healthCheckInterval) {
       clearInterval(this.healthCheckInterval);
@@ -791,6 +810,63 @@ export class LoxoneWebinterface {
   }
 
   /**
+   * Watch the page's WebSockets via CDP so a dead data path is detected as an
+   * EVENT (~20s) instead of being inferred from STATUS_STALE_THRESHOLD silence
+   * (10 minutes). This is the fast path for the failure that actually happens
+   * here: the Miniserver re-registers its cloud tunnel, gets a new relay
+   * host:port, and the socket we hold is closed against an endpoint that no
+   * longer exists — the app can retry forever and never get back.
+   *
+   * We do NOT recover on every close: the Loxone app reconnects itself after an
+   * ordinary blip, so a close only arms a timer that any new socket cancels.
+   * Recovery fires only if nothing reconnects within the grace window.
+   */
+  private async watchWebSocket() {
+    if (!this.page) {
+      return;
+    }
+    let openSockets = 0;
+    const cancelPending = () => {
+      if (this.wsRecoveryTimer) {
+        clearTimeout(this.wsRecoveryTimer);
+        this.wsRecoveryTimer = undefined;
+      }
+    };
+    try {
+      const client = await this.page.createCDPSession();
+      await client.send("Network.enable");
+
+      client.on("Network.webSocketCreated", () => {
+        openSockets++;
+        cancelPending(); // reconnected — whatever was pending is moot
+      });
+
+      client.on("Network.webSocketClosed", () => {
+        openSockets = Math.max(0, openSockets - 1);
+        if (openSockets > 0 || this.isRecovering) {
+          return; // another socket still carrying data, or we're already on it
+        }
+        cancelPending();
+        this.wsRecoveryTimer = setTimeout(() => {
+          this.wsRecoveryTimer = undefined;
+          if (this.isRecovering) {
+            return;
+          }
+          this.platform.logger.error(
+            `🚨 Loxone WebSocket closed and did not reconnect within ${WS_RECONNECT_GRACE / 1000}s — ` +
+            "data path is dead (relay endpoint likely moved), triggering recovery",
+          );
+          this.triggerRecovery().catch(() => { /* already logged */ });
+        }, WS_RECONNECT_GRACE);
+      });
+    } catch (e) {
+      // Non-fatal: without this we simply fall back to the slower
+      // STATUS_STALE_THRESHOLD watchdog, which still catches the same failure.
+      this.platform.logger.warn(`⚠️  Could not attach WebSocket watcher: ${(e as Error)?.message ?? e}`);
+    }
+  }
+
+  /**
    * Quick liveness probe: create a throwaway page and close it within a deadline.
    * If the browser's CDP connection is wedged, both will time out.
    */
@@ -823,6 +899,38 @@ export class LoxoneWebinterface {
    */
   bumpStatusHeartbeat() {
     this.lastStatusPushAt = Date.now();
+    // The echo we were waiting for arrived — the path is proven alive.
+    if (this.commandEchoTimer) {
+      clearTimeout(this.commandEchoTimer);
+      this.commandEchoTimer = undefined;
+    }
+  }
+
+  /**
+   * Called right after a command goes out over the WebSocket. Loxone echoes a
+   * status push for anything we control, so silence here is proof of death
+   * rather than an inference from it — which makes this the fastest detector we
+   * have, and the only one that fires on the interaction the user is actually
+   * standing in front of.
+   *
+   * Deliberately armed only once: a burst of commands (e.g. "all blinds up")
+   * waits on a single echo, not one timer per control.
+   */
+  expectStatusAfterCommand() {
+    if (this.isRecovering || this.commandEchoTimer || !this.page) {
+      return;
+    }
+    this.commandEchoTimer = setTimeout(() => {
+      this.commandEchoTimer = undefined;
+      if (this.isRecovering) {
+        return;
+      }
+      this.platform.logger.error(
+        `🚨 Command sent but no Loxone status push within ${COMMAND_ECHO_TIMEOUT / 1000}s — ` +
+        "data path is dead, triggering recovery",
+      );
+      this.triggerRecovery().catch(() => { /* already logged */ });
+    }, COMMAND_ECHO_TIMEOUT);
   }
 
   /**
@@ -859,6 +967,14 @@ export class LoxoneWebinterface {
   }
 
   async shutdown() {
+    if (this.wsRecoveryTimer) {
+      clearTimeout(this.wsRecoveryTimer);
+      this.wsRecoveryTimer = undefined;
+    }
+    if (this.commandEchoTimer) {
+      clearTimeout(this.commandEchoTimer);
+      this.commandEchoTimer = undefined;
+    }
     if (this.preventStandbyInterval) {
       clearInterval(this.preventStandbyInterval);
     }
