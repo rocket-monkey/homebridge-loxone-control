@@ -62,7 +62,6 @@ export class LoxoneWebinterface {
   // way to know which UUID in newVals corresponds to e.g. "autoActive".
   public controlStateMaps: { [uuidAction: string]: { [stateName: string]: string } } = {};
 
-  private interval: ReturnType<typeof setInterval> | undefined;
   private preventStandbyInterval: ReturnType<typeof setInterval> | undefined;
   private healthCheckInterval: ReturnType<typeof setInterval> | undefined;
   private isRecovering = false;
@@ -93,11 +92,7 @@ export class LoxoneWebinterface {
       return false;
     }
     // Clear stale intervals from a previous init (e.g. after recovery), otherwise
-    // refreshLogin/preventStandby would run against both the old and new pages.
-    if (this.interval) {
-      clearInterval(this.interval);
-      this.interval = undefined;
-    }
+    // preventStandby would run against both the old and new pages.
     if (this.preventStandbyInterval) {
       clearInterval(this.preventStandbyInterval);
       this.preventStandbyInterval = undefined;
@@ -466,14 +461,30 @@ export class LoxoneWebinterface {
       this.platform.logger.info(`✅ Login flow completed in ${Date.now() - navigationStart}ms${sessionRestored ? " (session restore)" : ""}`);
       await sleep(LOGIN_POST_LOAD_DELAY);
 
-      // random number between 0 and 60 seconds
-      const randomDelay = Math.floor(Math.random() * 1000 * 60);
-
-      this.interval = setInterval(
-        this.refreshLogin.bind(this),
-        1000 * 60 * 60 * 24 + randomDelay,
-      );
-
+      // NO proactive daily re-login here. There used to be a 24h setInterval
+      // calling refreshLogin(), and it was the single biggest source of
+      // instability: refreshLogin() ran `page.goto(serverUrl)` on THIS page —
+      // the one carrying the live Loxone WebSocket — so it destroyed a working
+      // data path before it had a replacement, then re-did a full form login
+      // on top of the wreckage with ONE waitForSelector attempt and no
+      // rollback. Succeed and you never notice; fail and the WS is already
+      // gone with nothing to fall back to.
+      //
+      // Traced to the second on 2026-07-31: refresh fired at 19:53:19, status
+      // pushes stopped at that exact moment, the re-login timed out at
+      // 19:56:21, and the watchdog reported "no status push for 614s" at
+      // 20:03:33. A guaranteed daily coin-flip against whatever Loxone's cloud
+      // relay was doing in those few seconds.
+      //
+      // Session expiry is now handled REACTIVELY instead: an expired session
+      // stops the status pushes, the watchdog notices within
+      // STATUS_STALE_THRESHOLD and runs triggerRecovery() -> init(), which is
+      // strictly more robust than refreshLogin ever was (retries with an
+      // extended timeout, restores the saved session, re-applies the comps.js
+      // patches, and re-arms the watchdog on failure so it keeps retrying).
+      // Worst case is a few minutes of stale state on the rare occasion the
+      // session actually expires — instead of a daily chance of hours of
+      // downtime.
       this.preventStandbyInterval = setInterval(async () => {
         if (this.page) {
           await this.page.mouse.move(0, 0);
@@ -847,67 +858,7 @@ export class LoxoneWebinterface {
     }, HEALTH_CHECK_INTERVAL);
   }
 
-  async refreshLogin() {
-    const { serverUrl, user, password } = this.getLoxoneCredentials();
-    if (!serverUrl || !user || !password) {
-      return;
-    }
-
-    if (!this.browser) {
-      return;
-    }
-
-    this.platform.logger.debug("Refreshing login for loxone web interface...");
-    const timestamp = new Date().getTime();
-
-    try {
-      // login to loxone miniserver
-      if (DEBUG_MODE) {
-        this.platform.logger.debug(`🔍 Refresh login - navigating to: ${serverUrl}`);
-      }
-      this.page?.goto(serverUrl).catch(() => { /* navigation may be interrupted */ });
-      await this.page?.waitForSelector("input[type=text]", { timeout: NAVIGATION_TIMEOUT });
-
-      if (DEBUG_MODE) {
-        this.platform.logger.debug("🔍 Refresh login - typing credentials");
-      }
-      await this.page?.type("input[type=text]", user);
-      await this.page?.type("input[type=password]", password);
-
-      await Promise.all([
-        this.page?.click("button[type=submit]"),
-        this.page?.waitForSelector("input[type=text]", { hidden: true, timeout: NAVIGATION_TIMEOUT }),
-      ]);
-
-      if (DEBUG_MODE) {
-        this.platform.logger.debug("🔍 Refresh login - waiting for scripts to load");
-      }
-      await this.page?.waitForFunction(
-        "!document.querySelector(\"body\").innerText.includes(\"Loading Script \")",
-        { timeout: NAVIGATION_TIMEOUT },
-      );
-
-      const timeElapsed = new Date().getTime() - timestamp;
-      // log success with time elapsed in seconds
-      this.platform.logger.info(
-        `✅ Successfully refreshed login in ${Math.floor(
-          timeElapsed / 1000,
-        )} seconds!`,
-      );
-    } catch (e: any) {
-      this.platform.logger.error("❌ Error during refresh login!");
-      this.platform.logger.error(`🔍 Error message: ${e.message}`);
-      
-      if (e.message?.includes("Navigation timeout")) {
-        this.platform.logger.error("🔍 Navigation timeout during refresh - server may be slow or unresponsive");
-      }
-    }
-  }
-
   async shutdown() {
-    if (this.interval) {
-      clearInterval(this.interval);
-    }
     if (this.preventStandbyInterval) {
       clearInterval(this.preventStandbyInterval);
     }
