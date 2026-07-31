@@ -80,11 +80,17 @@ export class LoxoneWebinterface {
     this.getLoxoneCredentials = this.getLoxoneCredentials.bind(this);
   }
 
-  async init() {
+  /**
+   * Returns true only when the interface came up far enough to serve HomeKit
+   * (collection captured, onReady fired, health check armed). Callers — notably
+   * triggerRecovery — need to distinguish that from the failure paths below,
+   * which are all logged but deliberately not thrown.
+   */
+  async init(): Promise<boolean> {
     const { serverUrl, user, password } = this.getLoxoneCredentials();
     if (!serverUrl || !user || !password) {
       this.platform.logger.error("❌ Missing credentials - serverUrl, user or password not configured");
-      return;
+      return false;
     }
     // Clear stale intervals from a previous init (e.g. after recovery), otherwise
     // refreshLogin/preventStandby would run against both the old and new pages.
@@ -115,7 +121,7 @@ export class LoxoneWebinterface {
             this.platform.logger.error(
               `❌ Chromium path does not exist: ${this.platform.config.chromiumPath}`,
             );
-            return;
+            return false;
           }
 
           if (DEBUG_MODE) {
@@ -166,7 +172,7 @@ export class LoxoneWebinterface {
           `❌ Could not start headless browser! Error: ${e.message}`,
         );
         this.platform.logger.error("See https://github.com/rocket-monkey/homebridge-loxone-control?tab=readme-ov-file#setup");
-        return;
+        return false;
       }
     }
     if (DEBUG_MODE) {
@@ -360,7 +366,7 @@ export class LoxoneWebinterface {
     try {
       if (!this.page) {
         this.platform.logger.error("❌ Page not available for login");
-        return;
+        return false;
       }
 
       const startTime = Date.now();
@@ -499,7 +505,7 @@ export class LoxoneWebinterface {
       }
       if (!allCollectedComponents || allCollectedComponents.length === 0) {
         this.platform.logger.error(`❌ No components collected after ${(COLLECTION_MAX_ATTEMPTS * COLLECTION_POLL_INTERVAL) / 1000}s`);
-        return;
+        return false;
       }
       this.collectedComponents = allCollectedComponents.map((c: any) => ({
         ...c,
@@ -553,6 +559,7 @@ export class LoxoneWebinterface {
       // Snapshot cookies + localStorage so the next init() (e.g. after a recovery)
       // can skip the form-based login entirely. In-memory only — not persisted to disk.
       await this.captureSession();
+      return true;
     } catch (e: any) {
       this.platform.logger.error("❌ Error during login!");
       this.platform.logger.error(`🔍 Error type: ${e.constructor.name}`);
@@ -585,6 +592,7 @@ export class LoxoneWebinterface {
           this.platform.logger.error(`🔍 Could not get page info: ${pageError}`);
         }
       }
+      return false;
     }
   }
 
@@ -750,13 +758,25 @@ export class LoxoneWebinterface {
     this.recoveryCount++;
     this.platform.logger.info(`🚑 Re-initializing Loxone web interface after recovery (count: ${this.recoveryCount})...`);
     this.isRecovering = false; // init() needs this cleared so it can proceed
+    let recovered = false;
     try {
-      await this.init();
-      this.platform.logger.info("✅ Recovery complete — Loxone web interface back online");
+      recovered = await this.init();
     } catch (e: unknown) {
       this.platform.logger.error(`❌ Recovery init failed: ${(e as Error)?.message ?? e}`);
-      // Leave isRecovering false so the next health check can retry
     }
+    if (recovered) {
+      this.platform.logger.info("✅ Recovery complete — Loxone web interface back online");
+    } else {
+      this.platform.logger.error("❌ Recovery failed — Loxone web interface still down, will retry");
+    }
+    // Re-arm the watchdog unconditionally. We cleared it above, and only a
+    // SUCCESSFUL init() re-arms it (via startHealthCheck at the end of its try
+    // block). Without this, a failed recovery left the watchdog dead forever:
+    // the WS path stayed down, nothing ever re-triggered, and the plugin sat
+    // accepting HomeKit commands that went nowhere. Observed 2026-07-31 — one
+    // transient login failure turned into a 5h silent outage. startHealthCheck
+    // is a no-op when already armed, so this is safe on the success path too.
+    this.startHealthCheck();
   }
 
   /**
