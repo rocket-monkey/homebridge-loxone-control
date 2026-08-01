@@ -59,9 +59,13 @@ export class PlatformLightAccessory extends AccessoryBase {
         this.states.On ? "On" : "Off"
       } to ${value ? "On" : "Off"}`,
     );
+    const isRealChange = !!this.states.On !== !!value;
     await sendCommandSafe(this.platform, this.identifier, [
       value ? "on" : "off",
     ]);
+    if (isRealChange) {
+      this.expectEcho();
+    }
 
     if (!value) {
       this.startPowerOnCooldown();
@@ -92,10 +96,14 @@ export class PlatformLightAccessory extends AccessoryBase {
     this.platform.logger.info(
       `💡 Control brightness "${name}" from ${this.states.Brightness}% to ${value}%`,
     );
+    const isRealChange = this.states.Brightness !== value;
     await sendCommandSafe(this.platform, this.identifier, [
       `${value}`,
       "override",
     ]);
+    if (isRealChange) {
+      this.expectEcho();
+    }
   }
 
   async getBrightness(): Promise<CharacteristicValue> {

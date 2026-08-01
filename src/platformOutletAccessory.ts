@@ -42,6 +42,9 @@ export class PlatformOutletAccessory extends AccessoryBase {
     await sendCommandSafe(this.platform, this.identifier, [
       value ? "on" : "off",
     ]);
+    // Guarded by the early return above, so reaching here is always a real
+    // state change.
+    this.expectEcho();
   }
 
   async getOn(): Promise<CharacteristicValue> {

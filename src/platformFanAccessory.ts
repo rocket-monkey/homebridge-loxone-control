@@ -146,6 +146,7 @@ export class PlatformFanAccessory extends AccessoryBase {
       }`,
     );
 
+    const isRealChange = !!this.states.On !== !!value;
     const command = fanBathroom
       ? value
         ? "on"
@@ -156,6 +157,9 @@ export class PlatformFanAccessory extends AccessoryBase {
     await sendCommandSafe(this.platform, this.identifier, [
       command,
     ]);
+    if (isRealChange) {
+      this.expectEcho();
+    }
   }
 
   async getOn(): Promise<CharacteristicValue> {

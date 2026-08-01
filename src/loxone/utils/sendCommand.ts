@@ -58,10 +58,18 @@ export const sendCommandSafe = async (
   const jsError = await sendCommand(platform, ...args);
   if (jsError) {
     platform.logger.error(`Error in sendCommand: ${jsError}`);
-    return;
   }
-  // The command reached the page. Loxone must now echo a status push; if it
-  // doesn't, the data path is dead and we recover immediately instead of
-  // waiting for the slower silence/socket watchdogs to notice.
-  platform.getLoxoneWebinterfaceInstance()?.expectStatusAfterCommand();
+  // NOTE: deliberately does NOT arm the command-echo watchdog. Plenty of
+  // commands here produce no status update at all, and arming on those would
+  // fire a bogus recovery ~3s later:
+  //   - no-ops, where the target value already equals the current one
+  //     ("fan from Off to Off" — light/fan setOn send these; outlet guards)
+  //   - momentary / stateless commands: stop, FullUp, FullDown, shade, auto,
+  //     NoAuto, the central pushbuttons, and the /api/debug probes. FullUp on
+  //     an already-retracted blind moves nothing (platform.ts even sends
+  //     FullUp twice in a row, so the second is silent by construction).
+  // Arming is therefore OPT-IN via AccessoryBase.expectEcho(), called only
+  // where the caller has just proven a real state delta. Fail-safe by design:
+  // a missed arm costs nothing (the socket-close and silence watchdogs still
+  // cover it), while a wrong arm would cost a needless recovery.
 };
