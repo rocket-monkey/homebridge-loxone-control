@@ -23,6 +23,8 @@ import {
   SESSION_RESTORE_PROBE_TIMEOUT,
   STATUS_STALE_THRESHOLD,
   COMMAND_ECHO_TIMEOUT,
+  NAV_MAX_ATTEMPTS,
+  NAV_RETRY_DELAY,
   WS_RECONNECT_GRACE,
 } from "../settings.js";
 
@@ -78,6 +80,9 @@ export class LoxoneWebinterface {
   private wsRecoveryTimer: ReturnType<typeof setTimeout> | undefined;
   // Armed when a command goes out, cancelled by the status push it must produce.
   private commandEchoTimer: ReturnType<typeof setTimeout> | undefined;
+  // Set while a navigation is in flight; the response listener calls it when the
+  // main-frame document comes back with an HTTP error.
+  private navErrorResolve: ((e: { status: number; url: string }) => void) | undefined;
 
   constructor(public readonly platform: LoxoneControlPlatform) {
     this.platform.logger.debug("LoxoneWebinterface constructor");
@@ -240,6 +245,17 @@ export class LoxoneWebinterface {
     this.page?.on("response", (response) => {
       if (response.status() >= 400 && !response.url().includes("statistic.js")) {
         this.platform.logger.error(`🔍 HTTP Error ${response.status()}: ${response.url()}`);
+      }
+      // A failed MAIN-FRAME navigation means the document will never render, so
+      // there is no point waiting for the login form. Surface it immediately so
+      // the navigation can be retried instead of timing out for 8 minutes.
+      const req = response.request();
+      if (
+        response.status() >= 400 &&
+        req.isNavigationRequest() &&
+        req.frame() === this.page?.mainFrame()
+      ) {
+        this.navErrorResolve?.({ status: response.status(), url: response.url() });
       }
     });
 
@@ -421,19 +437,61 @@ export class LoxoneWebinterface {
         // login to loxone miniserver
         this.platform.logger.info("🔍 Navigating to Loxone web interface...");
         // Don't await goto — just fire and wait for the login form
-        this.page.goto(serverUrl).catch((e: any) => {
-          this.platform.logger.info(`🔍 goto catch: ${e.message}`);
-        });
-
-        // Wait for the login form — use waitForSelector which listens via CDP
-        // without needing JS execution on the main thread
+        // Navigate, then race the login form against a failed navigation. A
+        // waitForSelector timeout means "slow" (comps.js is huge, so the long
+        // timeouts are legitimate); an HTTP error on the main frame means
+        // "never" — the document didn't load, so waiting is pure dead time.
+        // Distinguishing them is the whole point: retry the fast failure, keep
+        // being patient with the slow one.
         this.platform.logger.info("🔍 Waiting for login form...");
-        try {
-          await this.page.waitForSelector("input[type=text]", { timeout: NAVIGATION_TIMEOUT });
-        } catch {
-          this.platform.logger.error("❌ Login form never appeared - retrying with extended timeout...");
-          // Try once more with a longer timeout — the huge comps.js can take very long
-          await this.page.waitForSelector("input[type=text]", { timeout: NAVIGATION_RETRY_TIMEOUT });
+        let formAppeared = false;
+        for (let attempt = 1; attempt <= NAV_MAX_ATTEMPTS && !formAppeared; attempt++) {
+          const navError = new Promise<{ status: number; url: string }>((res) => {
+            this.navErrorResolve = res;
+          });
+
+          // Don't await goto — with a 14-16MB comps.js it may not settle until
+          // long after the form is interactive. Wait for the form instead.
+          this.page.goto(serverUrl).catch((e: any) => {
+            this.platform.logger.info(`🔍 goto catch: ${e.message}`);
+          });
+
+          // Last attempt gets the extended timeout, since by then a slow load is
+          // the likelier explanation than another transient redirector error.
+          const timeout = attempt === NAV_MAX_ATTEMPTS ? NAVIGATION_RETRY_TIMEOUT : NAVIGATION_TIMEOUT;
+          const outcome = await Promise.race([
+            this.page
+              .waitForSelector("input[type=text]", { timeout })
+              .then(() => ({ kind: "form" as const }))
+              .catch(() => ({ kind: "timeout" as const })),
+            navError.then((e) => ({ kind: "http" as const, ...e })),
+          ]);
+          this.navErrorResolve = undefined;
+
+          if (outcome.kind === "form") {
+            formAppeared = true;
+            break;
+          }
+
+          if (outcome.kind === "http") {
+            this.platform.logger.error(
+              `❌ Navigation failed with HTTP ${outcome.status} (${outcome.url}) — ` +
+              `the page will never render a login form. Attempt ${attempt}/${NAV_MAX_ATTEMPTS}`,
+            );
+          } else {
+            this.platform.logger.error(
+              `❌ Login form never appeared within ${timeout / 1000}s — attempt ${attempt}/${NAV_MAX_ATTEMPTS}`,
+            );
+          }
+
+          if (attempt < NAV_MAX_ATTEMPTS) {
+            await sleep(NAV_RETRY_DELAY);
+            this.platform.logger.info("🔁 Re-navigating to the Loxone web interface...");
+          }
+        }
+
+        if (!formAppeared) {
+          throw new Error(`Login form never appeared after ${NAV_MAX_ATTEMPTS} navigation attempts`);
         }
         this.platform.logger.info(`✅ Login form appeared in ${Date.now() - startTime}ms`);
 

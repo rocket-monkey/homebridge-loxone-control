@@ -66,6 +66,18 @@ export const WS_RECONNECT_GRACE = 20000;
 // interaction the user is standing in front of.
 export const COMMAND_ECHO_TIMEOUT = 3000;
 
+// Loxone's cloud redirector (dns.loxonecloud.com) intermittently answers the
+// navigation with an HTTP error instead of the usual 307 — observed 405 on
+// 2026-07-31 and 408 on 2026-07-29. When that happens the document never
+// loads, so the login form can NEVER appear, and blocking on waitForSelector
+// just burns NAVIGATION_TIMEOUT + NAVIGATION_RETRY_TIMEOUT (8 minutes) before
+// admitting defeat. We cannot stop the redirector doing it, but a failed
+// navigation is visible within ~1s, so re-issue the goto instead of waiting
+// out a timeout against a page that already errored. Retries are cheap: the
+// same URL answered 307 on ten consecutive probes moments later.
+export const NAV_MAX_ATTEMPTS = 3;
+export const NAV_RETRY_DELAY = 3000;
+
 export const STANDBY_PREVENT_INTERVAL = 30000;
 export const AUTO_SUN_COOLDOWN = 1000;
 
