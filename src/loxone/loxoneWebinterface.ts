@@ -814,17 +814,34 @@ export class LoxoneWebinterface {
     this.platform.markWebinterfaceNotReady();
 
     // Phase 1: close the page only. If the browser is still responsive, we can reuse it.
+    // A page that does NOT close within the deadline is wedged — and since the
+    // close() promise is abandoned when the timeout wins, its renderer is now
+    // orphaned. Reusing the browser would strand that renderer permanently: the
+    // Loxone SPA inside it keeps running and its heap keeps growing (observed
+    // 2026-09: orphaned renderers accumulating across recoveries, one reaching
+    // 400MB+ over two weeks). Record the timeout so Phase 2 reaps it.
+    let pageCloseHung = false;
     if (this.page) {
       const pageToClose = this.page;
       this.page = undefined;
-      await Promise.race([
-        pageToClose.close().catch(() => { /* already dead */ }),
+      const CLOSED = Symbol("closed");
+      const outcome = await Promise.race([
+        pageToClose.close().then(() => CLOSED, () => CLOSED),
         sleep(RECOVERY_CLOSE_TIMEOUT),
       ]);
+      pageCloseHung = outcome !== CLOSED;
+      if (pageCloseHung) {
+        this.platform.logger.warn(
+          "🚑 Page did not close within the deadline — its renderer is wedged; " +
+          "forcing a full browser teardown so it can't leak",
+        );
+      }
     }
 
-    // Phase 2: probe whether the browser is still usable. If not, tear it down too.
-    const browserAlive = await this.isBrowserAlive();
+    // Phase 2: probe whether the browser is still usable. A wedged page from
+    // Phase 1 can only be reaped by killing the whole browser, so a hung close
+    // forces teardown regardless of what the liveness probe would say.
+    const browserAlive = !pageCloseHung && (await this.isBrowserAlive());
     if (!browserAlive && this.browser) {
       this.platform.logger.warn("🚑 Browser itself is unresponsive — tearing down and relaunching");
       const browserToClose = this.browser;
@@ -933,11 +950,17 @@ export class LoxoneWebinterface {
       return false;
     }
     try {
+      const pagePromise = this.browser.newPage();
       const probe = await Promise.race([
-        this.browser.newPage(),
+        pagePromise,
         new Promise<null>((resolve) => setTimeout(() => resolve(null), RECOVERY_CLOSE_TIMEOUT)),
       ]);
       if (!probe) {
+        // newPage() lost the race but may still resolve after we return — close
+        // that page when it does, otherwise it becomes an orphaned renderer.
+        pagePromise
+          .then((p) => p.close().catch(() => { /* ignore */ }))
+          .catch(() => { /* newPage itself failed — nothing to close */ });
         return false;
       }
       await Promise.race([
