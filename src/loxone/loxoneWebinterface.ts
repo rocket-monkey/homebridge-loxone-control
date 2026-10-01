@@ -636,6 +636,9 @@ export class LoxoneWebinterface {
       // Snapshot cookies + localStorage so the next init() (e.g. after a recovery)
       // can skip the form-based login entirely. In-memory only — not persisted to disk.
       await this.captureSession();
+      // Last step on purpose: the whole start-up (login, collection, state
+      // maps, session snapshot) runs exactly as before with the page in front.
+      await this.backgroundLoxonePage();
       return true;
     } catch (e: any) {
       this.platform.logger.error("❌ Error during login!");
@@ -938,6 +941,48 @@ export class LoxoneWebinterface {
       // Non-fatal: without this we simply fall back to the slower
       // STATUS_STALE_THRESHOLD watchdog, which still catches the same failure.
       this.platform.logger.warn(`⚠️  Could not attach WebSocket watcher: ${(e as Error)?.message ?? e}`);
+    }
+  }
+
+  /**
+   * Put the Loxone page in the background by bringing a blank tab to the front.
+   *
+   * The plugin only needs the app's data path (WebSocket -> patched comps.js ->
+   * exposed callbacks), never its pixels. While the Loxone tab is the visible,
+   * focused tab, Chrome runs every requestAnimationFrame loop at full frame
+   * rate: the app's pulsing "unread NEWS" badge (react-native-web
+   * Animated.loop, a 7x7 px SVG) alone drove ~60 style + layout passes per
+   * second, ~24% of a NAS core, around the clock. A hidden page gets no
+   * animation frames at all.
+   *
+   * Measured 2026-10-01 on the live system, 12 min hidden: Chrome CPU 24% ->
+   * 0-1%, Loxone WebSocket messages kept flowing (~105-133/min, same as
+   * visible), keepalive timers unaffected, and no stale-watchdog recovery —
+   * i.e. status pushes kept reaching bumpStatusHeartbeat().
+   *
+   * init() runs this after every (re)start, so a recovery re-backgrounds the
+   * new page. Non-fatal: on failure the plugin keeps working as before, with
+   * the page in front.
+   */
+  private async backgroundLoxonePage(): Promise<void> {
+    if (!this.browser || !this.page) {
+      return;
+    }
+    try {
+      const pages = await this.browser.pages();
+      let blank = pages.find((p) => p !== this.page && p.url() === "about:blank");
+      if (!blank) {
+        blank = await this.browser.newPage();
+      }
+      await blank.bringToFront();
+      const visibility = await this.page.evaluate(() => document.visibilityState);
+      this.platform.logger.info(
+        `🌙 Loxone page backgrounded — rendering paused (visibility: ${visibility})`,
+      );
+    } catch (e: any) {
+      this.platform.logger.warn(
+        `⚠️ Could not background the Loxone page (${e.message}) — continuing with it in front`,
+      );
     }
   }
 
