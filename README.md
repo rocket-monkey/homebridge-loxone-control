@@ -22,8 +22,9 @@
 ### Prerequisites
 
 - To use this plugin, you will need to already have:
-  - [Node](https://nodejs.org): latest version of `v20` or `v22` - any other major version is not supported.
-  - [Homebridge](https://homebridge.io): `v1.9` - refer to link for more information and installation instructions.
+  - [Node](https://nodejs.org): `v22` (22.12 or newer) or `v24` - any other major version is not supported.
+  - [Homebridge](https://homebridge.io): `v2.4` or newer - refer to link for more information and installation instructions.
+  - Since plugin `v3.0.0` (Puppeteer 25, homebridge-lib 8), Node 18/20 and Homebridge 1.x are no longer supported. Stay on plugin `v2.5.x` if you can't upgrade yet.
   - Credentials for Loxone MiniServer: You will need your Loxone MiniServer ID and login credentials for the Loxone App. Typically, your landlord will provide a login link or similar access method for the Loxone App. Within the app, navigate to the info panel to locate the "serial number," which serves as your MiniServer ID.
 
 ### Tenants at Jägerstrasse 59, Winterthur

@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { LoxoneControlPlatform } from "./platform";
+import { LoxoneControlPlatform } from "./platform.js";
 
 export class Logger {
   public readonly verbose: boolean;
