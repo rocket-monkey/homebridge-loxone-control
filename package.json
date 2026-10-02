@@ -52,6 +52,7 @@
     "@homebridge/plugin-ui-utils": "2.2.6",
     "homebridge-lib": "^8.1.5",
     "puppeteer": "25.12.0",
-    "username": "7.0.0"
+    "username": "7.0.0",
+    "yauzl": "^3.4.0"
   }
 }
