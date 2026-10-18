@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { existsSync } from "fs";
-import { readFile } from "fs/promises";
+import { readFile, writeFile } from "fs/promises";
 import { resolve } from "path";
 import puppeteer, { Browser, Page } from "puppeteer";
 import { usernameSync } from "username";
@@ -37,6 +37,11 @@ interface SavedSession {
 }
 
 const __dirname = import.meta.dirname;
+
+/** Any https origin the redirector hands out — i.e. not the redirector itself. */
+function isRelayOrigin(origin: string): boolean {
+  return origin.startsWith("https://") && origin !== "https://dns.loxonecloud.com";
+}
 const BROWSER_LOG = false; // set to true to log browser console messages
 const DEBUG_MODE = false; // set to true for verbose debugging
 
@@ -70,6 +75,16 @@ export class LoxoneWebinterface {
   private healthCheckInterval: ReturnType<typeof setInterval> | undefined;
   private isRecovering = false;
   private savedSession: SavedSession | null = null;
+  /**
+   * Origin the dns.loxonecloud.com redirector last sent us to
+   * (`https://<relay>.<id>.dyndns.loxonecloud.com:<port>`). When the
+   * redirector itself fails (405/408/503 — 2026-10-18 it answered 408 for
+   * hours while the Miniserver and the Loxone app were fine), navigate to this
+   * origin directly instead of being dead until the redirector recovers.
+   * Persisted next to the Homebridge storage so it survives restarts.
+   */
+  private lastRelayOrigin: string | null = null;
+  private relayLoaded = false;
   public recoveryCount = 0;
   // Wall-clock of the most recent Loxone status push delivered through the
   // patched comps.js (onStatusUpdate / onStatusUpdateBefore). The page can
@@ -445,14 +460,19 @@ export class LoxoneWebinterface {
         // being patient with the slow one.
         this.platform.logger.info("🔍 Waiting for login form...");
         let formAppeared = false;
+        let useRelay = false;
         for (let attempt = 1; attempt <= NAV_MAX_ATTEMPTS && !formAppeared; attempt++) {
+          const target: string = useRelay && this.lastRelayOrigin ? `${this.lastRelayOrigin}/` : serverUrl;
+          if (target !== serverUrl) {
+            this.platform.logger.info(`🔗 Redirector down — trying last known relay ${this.lastRelayOrigin} directly`);
+          }
           const navError = new Promise<{ status: number; url: string }>((res) => {
             this.navErrorResolve = res;
           });
 
           // Don't await goto — with a 14-16MB comps.js it may not settle until
           // long after the form is interactive. Wait for the form instead.
-          this.page.goto(serverUrl).catch((e: any) => {
+          this.page.goto(target).catch((e: any) => {
             this.platform.logger.info(`🔍 goto catch: ${e.message}`);
           });
 
@@ -478,6 +498,11 @@ export class LoxoneWebinterface {
               `❌ Navigation failed with HTTP ${outcome.status} (${outcome.url}) — ` +
               `the page will never render a login form. Attempt ${attempt}/${NAV_MAX_ATTEMPTS}`,
             );
+            // Redirector failed → next attempt goes straight to the last relay.
+            // Relay failed too (Miniserver re-registered on a new port) → back
+            // to the redirector, i.e. never worse than before.
+            await this.loadRelayOrigin();
+            useRelay = !useRelay && this.lastRelayOrigin !== null && outcome.url.startsWith(serverUrl);
           } else {
             this.platform.logger.error(
               `❌ Login form never appeared within ${timeout / 1000}s — attempt ${attempt}/${NAV_MAX_ATTEMPTS}`,
@@ -560,6 +585,7 @@ export class LoxoneWebinterface {
       this.platform.logger.info(
         "✅ Login successful, loxone web interface ready!",
       );
+      await this.rememberRelayOrigin();
 
       // Wait for the patched comps.js to initialize window.collection
       this.platform.logger.info("🔍 Waiting for device collection to be available...");
@@ -1124,6 +1150,43 @@ export class LoxoneWebinterface {
       this.browser = undefined;
     }
     this.platform.logger.info("Browser and intervals cleaned up");
+  }
+
+  private relayFile(): string {
+    return resolve(this.platform.api.user.storagePath(), "loxone-control-relay.json");
+  }
+
+  private async loadRelayOrigin(): Promise<void> {
+    if (this.relayLoaded) {
+      return;
+    }
+    this.relayLoaded = true;
+    try {
+      const data = JSON.parse(await readFile(this.relayFile(), "utf8"));
+      if (typeof data?.origin === "string" && isRelayOrigin(data.origin)) {
+        this.lastRelayOrigin = data.origin;
+      }
+    } catch {
+      // no relay remembered yet
+    }
+  }
+
+  private async rememberRelayOrigin(): Promise<void> {
+    try {
+      const origin = new URL(this.page?.url() ?? "").origin;
+      if (!isRelayOrigin(origin)) {
+        this.platform.logger.info(`🔗 Logged in at ${origin} — not a relay origin, nothing to remember`);
+        return;
+      }
+      this.relayLoaded = true;
+      if (origin !== this.lastRelayOrigin) {
+        this.platform.logger.info(`🔗 Relay endpoint: ${origin}`);
+        this.lastRelayOrigin = origin;
+        await writeFile(this.relayFile(), JSON.stringify({ origin, seenAt: new Date().toISOString() }));
+      }
+    } catch (e: unknown) {
+      this.platform.logger.warn(`🔗 Could not remember relay endpoint: ${(e as Error)?.message ?? e}`);
+    }
   }
 
   getLoxoneCredentials() {
