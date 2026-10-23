@@ -91,6 +91,15 @@ export class LoxoneWebinterface {
   // be JS-responsive while the WS data path silently dies — `() => 1` would
   // still return 1. Tracking actual data flow is the only reliable signal.
   private lastStatusPushAt = 0;
+  /**
+   * Time of the last REAL status push from Loxone. Unlike lastStatusPushAt it
+   * is never reset on (re)init, so /api/health can tell "browser and page are
+   * fine but no data has arrived for N minutes". 2026-10-23: the cloud relay
+   * was gone for hours; the plugin looped "No components collected" while
+   * /api/health kept answering healthy/connected/responsive, so every
+   * dashboard tile stayed green while nothing was controllable.
+   */
+  private lastDataAt = 0;
   // Armed when the last WebSocket closes, cancelled if one reconnects.
   private wsRecoveryTimer: ReturnType<typeof setTimeout> | undefined;
   // Armed when a command goes out, cancelled by the status push it must produce.
@@ -794,10 +803,16 @@ export class LoxoneWebinterface {
       const probe = await this.safeEvaluate(() => true);
       pageResponsive = probe === true;
     }
+    // Healthy means Loxone data is actually flowing, not just that Chrome
+    // answers: same staleness bound the watchdog uses to trigger recovery.
+    const dataAgeMs = this.lastDataAt ? Date.now() - this.lastDataAt : null;
+    const dataFresh = dataAgeMs !== null && dataAgeMs < STATUS_STALE_THRESHOLD;
     return {
-      status: pageResponsive ? "healthy" : this.isRecovering ? "recovering" : "unhealthy",
+      status: this.isRecovering ? "recovering" : pageResponsive && dataFresh ? "healthy" : "unhealthy",
       browser: browserConnected ? "connected" : "disconnected",
       page: pageReady ? (pageResponsive ? "responsive" : "unresponsive") : "none",
+      data: dataAgeMs === null ? "none" : dataFresh ? "flowing" : "stale",
+      dataAge: dataAgeMs === null ? null : Math.round(dataAgeMs / 1000),
       recovering: this.isRecovering,
       recoveryCount: this.recoveryCount,
       uptime: Math.round(process.uptime()),
@@ -1051,6 +1066,7 @@ export class LoxoneWebinterface {
    */
   bumpStatusHeartbeat() {
     this.lastStatusPushAt = Date.now();
+    this.lastDataAt = this.lastStatusPushAt;
     // The echo we were waiting for arrived — the path is proven alive.
     if (this.commandEchoTimer) {
       clearTimeout(this.commandEchoTimer);
