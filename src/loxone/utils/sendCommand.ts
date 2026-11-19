@@ -6,8 +6,18 @@ export const sendCommand = async (
   ...args: any[]
 ) => {
   platform.logger.debug(
-    `   🔌 sendCommand over websocket: ${JSON.stringify(args)}`
+    `   🔌 sendCommand over websocket: ${JSON.stringify(args)}`,
   );
+  // App-protocol connector (remoteMode=app): route straight to the Miniserver
+  // over the documented WebSocket API. args[0] is the device identifier, the
+  // remaining args are the accessory's command array (usually one array, e.g.
+  // ["on"] or ["50","override"]).
+  const appConnector = platform.getAppConnector();
+  if (appConnector) {
+    const [identifier, ...rest] = args;
+    const cmdArray = Array.isArray(rest[0]) ? rest[0] : rest;
+    return appConnector.control(identifier as string, cmdArray);
+  }
   const webinterface = platform.getLoxoneWebinterfaceInstance();
   if (!webinterface) {
     return null;

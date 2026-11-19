@@ -32,6 +32,26 @@
         "type": "string",
         "required": true
       },
+      "remoteMode": {
+        "title": "Remote connection mode",
+        "description": "How the plugin talks to the Miniserver. 'web' drives the Loxone web UI in a headless browser (default, original behaviour). 'app' uses the documented Loxone app WebSocket protocol (loxone-ts-api) via Remote Connect \u2014 requires Miniserver firmware 17+ and Remote Connect enabled.",
+        "type": "string",
+        "default": "web",
+        "oneOf": [
+          {
+            "title": "Headless browser (web UI)",
+            "enum": [
+              "web"
+            ]
+          },
+          {
+            "title": "App protocol (WebSocket)",
+            "enum": [
+              "app"
+            ]
+          }
+        ]
+      },
       "chromiumPath": {
         "title": "Chromium Path",
         "type": "string",
@@ -75,14 +95,14 @@
               "title": "Should this device be handled as bathroom fan?",
               "type": "boolean",
               "condition": {
-                "functionBody": "return model.devices[arrayIndices].identifier.includes(\"Lüftung\");"
+                "functionBody": "return model.devices[arrayIndices].identifier.includes(\"L\u00fcftung\");"
               }
             },
             "fanAddButtons": {
               "title": "What additional levels should be available to set? List them coma separated",
               "type": "string",
               "condition": {
-                "functionBody": "return model.devices[arrayIndices].identifier.includes(\"Lüftung\");"
+                "functionBody": "return model.devices[arrayIndices].identifier.includes(\"L\u00fcftung\");"
               }
             },
             "blindsType": {
@@ -90,8 +110,18 @@
               "type": "string",
               "default": "blinds",
               "oneOf": [
-                { "title": "Blinds", "enum": ["blinds"] },
-                { "title": "Awning", "enum": ["awning"] }
+                {
+                  "title": "Blinds",
+                  "enum": [
+                    "blinds"
+                  ]
+                },
+                {
+                  "title": "Awning",
+                  "enum": [
+                    "awning"
+                  ]
+                }
               ],
               "condition": {
                 "functionBody": "return model.devices[arrayIndices].identifier.includes(\"Jalousie\");"

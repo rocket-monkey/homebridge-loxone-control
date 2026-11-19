@@ -14,6 +14,7 @@ import http, { IncomingMessage, Server, ServerResponse } from "http";
 import { AccessoryBase } from "./accessoryBase.js";
 import { BlindsController } from "./blindsController.js";
 import { LoxoneWebinterface } from "./loxone/loxoneWebinterface.js";
+import { LoxoneAppConnector } from "./loxone/appConnector.js";
 import { PLATFORM_NAME, PLUGIN_NAME } from "./settings.js";
 import { sleep } from "./loxone/utils/sleep.js";
 import { sendCommandSafe } from "./loxone/utils/sendCommand.js";
@@ -84,6 +85,9 @@ export class LoxoneControlPlatform implements DynamicPlatformPlugin {
 
   private loxoneWebinterface: LoxoneWebinterface;
   private loxoneWebinterfaceReady = false;
+  private appConnector?: LoxoneAppConnector;
+  /** "web" = headless-browser connector (default); "app" = loxone-ts-api. */
+  public readonly remoteMode!: "web" | "app";
   private allStates: {
     [identifier: string]: any[];
   } = {};
@@ -131,12 +135,22 @@ export class LoxoneControlPlatform implements DynamicPlatformPlugin {
     });
 
     this.loxoneWebinterface = new LoxoneWebinterface(this);
-    this.loxoneWebinterface.init();
+    this.remoteMode = this.config.remoteMode === "app" ? "app" : "web";
+    if (this.remoteMode === "app") {
+      this.logger.info(
+        "🔌 remoteMode=app — using the Loxone app protocol (loxone-ts-api); the headless-browser connector stays idle",
+      );
+      this.appConnector = new LoxoneAppConnector(this);
+      this.appConnector.init();
+    } else {
+      this.loxoneWebinterface.init();
+    }
     this.blindsController = new BlindsController(this);
 
     this.api.on("shutdown", () => {
       this.logger.info("Shutting down, cleaning up resources...");
       this.loxoneWebinterface.shutdown();
+      this.appConnector?.shutdown();
       if (this.requestServer) {
         this.requestServer.close();
       }
@@ -511,7 +525,9 @@ export class LoxoneControlPlatform implements DynamicPlatformPlugin {
         }
 
         case "/api/health": {
-          const health = await this.loxoneWebinterface.getHealthStatus();
+          const health = await (this.appConnector
+            ? this.appConnector.getHealthStatus()
+            : this.loxoneWebinterface.getHealthStatus());
           const statusCode = health.status === "healthy" ? 200 : 503;
           this.jsonResponse(response, health, statusCode);
           return;
@@ -813,6 +829,17 @@ export class LoxoneControlPlatform implements DynamicPlatformPlugin {
 
   getLoxoneWebinterfaceInstance() {
     return this.loxoneWebinterfaceReady ? this.loxoneWebinterface : null;
+  }
+
+  /** App connector when remoteMode=app, else null. Used by sendCommand. */
+  getAppConnector() {
+    return this.appConnector ?? null;
+  }
+
+  /** Let the app connector publish the control name→UUID maps the web path
+   *  normally builds (read by resolveStateValue + Auto-Sun extraction). */
+  applyControlStateMaps(maps: { [uuidAction: string]: { [name: string]: string } }) {
+    this.loxoneWebinterface.controlStateMaps = maps;
   }
 
   markWebinterfaceNotReady() {

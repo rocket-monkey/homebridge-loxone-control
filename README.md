@@ -38,6 +38,25 @@ Check your emails for correspondence from the 'Living Services' portal. You like
 3. Install this plugin trough the homebrdige UI by the name `homebridge-loxone-control`, or manually with `sudo npm install -g homebridge-loxone-control`
 4. Just go trough the configuration wizard of the plugin - it will discover all available devices automatically
 
+### Remote connection mode (`remoteMode`)
+
+The plugin can reach the Miniserver two ways, selected with the top-level
+`remoteMode` option:
+
+- **`web`** (default) — drives the Loxone web UI in a headless browser
+  (Puppeteer). The original behaviour; needs no Miniserver firmware change.
+- **`app`** — speaks the documented Loxone app WebSocket protocol via
+  [`loxone-ts-api`](https://github.com/andrasg/loxone-ts-api) (token auth,
+  encryption, Remote Connect address resolution). Lighter and more robust than
+  a headless browser, and it is the way back when Loxone restricts Remote
+  Connect to the App/Config. **Requires Miniserver firmware 17+ with Remote
+  Connect enabled.** `loxoneMiniServerId` / `loxoneUser` / `loxonePassword` are
+  reused as-is; the serial number is resolved to the relay automatically.
+
+```json
+"remoteMode": "app"
+```
+
 ### Configuration JSON
 
 The plugin allows to control all values that need to be matched with your specific Loxone installation - so it can be used for really _any_ Loxone configuration out there. The `blindsTiming\*` values are there to control how long it takes for a blind to reach 100% in seconds, 3 different types are supported: standart "window", a bigger one "window-big" and "awning". It is also possible to define all available `fanLevels` within your specific ventilation installation.
